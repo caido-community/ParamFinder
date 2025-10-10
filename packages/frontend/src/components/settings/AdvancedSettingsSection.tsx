@@ -153,7 +153,7 @@ export const AdvancedSettingsSection = () => {
             field: "addCacheBusterParameter" as const,
             label: "Always Add Cache Buster Parameter",
             tooltip:
-              "Always add a cache buster parameter to the request for headers attack",
+              "Always add a cache buster parameter to the request for headers & query attack",
           },
         ].map(({ field, label, tooltip }) => (
           <Box key={field}>

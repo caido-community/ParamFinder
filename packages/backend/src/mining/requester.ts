@@ -68,6 +68,9 @@ export class Requester {
     switch (attackType) {
       case "query":
         this.handleQueryParameters(requestCopy, parameters);
+        if (this.paramMiner.config.cacheBusterParameter || this.paramMiner.config.addCacheBusterParameter) {
+          this.handleCacheBusterParameter(requestCopy);
+        }
         break;
 
       case "headers":
