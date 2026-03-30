@@ -5,7 +5,11 @@ import {
 } from "shared";
 import { Anomaly, AnomalyType, StableFactors } from "shared";
 import { DiffingSystem } from "../util/diffing";
-import { stringSimilarity, randomString } from "../util/helper";
+import {
+  DEFAULT_RANDOM_PARAMETER_VALUE_LENGTH,
+  stringSimilarity,
+  randomString,
+} from "../util/helper";
 import { ParamMiner } from "./param-miner";
 
 const defaultUnstableHeaders = new Set<string>([
@@ -126,6 +130,18 @@ export class AnomalyDetector {
       }
     }
 
+    if (this.stableFactors.bodyLengthStable) {
+      const responseLength = responseBody.length;
+      if (responseLength !== this.stableFactors.bodyLength) {
+        return {
+          type: AnomalyType.Body,
+          which: "length",
+          from: this.stableFactors.bodyLength.toString(),
+          to: responseLength.toString(),
+        };
+      }
+    }
+
     // Check body changes
     if (this.stableFactors.bodyStable) {
       const differChanges = this.differ?.hasChanges(responseBody);
@@ -154,7 +170,7 @@ export class AnomalyDetector {
     for (let j = 0; j < count; j++) {
       params.push({
         name: randomString(10 + count),
-        value: randomString(10),
+        value: randomString(DEFAULT_RANDOM_PARAMETER_VALUE_LENGTH),
       } as Parameter);
     }
     return params;
@@ -245,6 +261,8 @@ export class AnomalyDetector {
       const newFactors = this.checkFactors(response, parameters);
 
       stable.bodyStable = stable.bodyStable && newFactors.bodyStable;
+      stable.bodyLengthStable =
+        stable.bodyLengthStable && newFactors.bodyLengthStable;
       stable.statusCodeStable =
         stable.statusCodeStable && newFactors.statusCodeStable;
       stable.reflectionStable =
@@ -273,8 +291,12 @@ export class AnomalyDetector {
     response: Response,
     parameters: Parameter[]
   ): StableFactors {
+    const initialBody = this.initialRequestResponse?.response.body || "";
+    const initialBodyLength = initialBody.length;
     const stable = {
       bodyStable: true,
+      bodyLength: initialBodyLength,
+      bodyLengthStable: true,
       headersStable: true,
       statusCodeStable: true,
       reflectionStable: true,
@@ -297,12 +319,15 @@ export class AnomalyDetector {
     }
 
     const responseBody = response.body || "";
-    const initialBody = this.initialRequestResponse?.response.body || "";
 
     // Calculate similarity with initial response
     const similarity = stringSimilarity(initialBody, responseBody);
     stable.similarity = similarity;
     stable.similarityStable = similarity > 0.98;
+
+    if (responseBody.length !== initialBodyLength) {
+      stable.bodyLengthStable = false;
+    }
 
     const hasChanges = this.differ?.hasChanges(responseBody);
     if (hasChanges) {

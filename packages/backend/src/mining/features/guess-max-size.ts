@@ -1,5 +1,8 @@
 import { ParamMiner } from "../param-miner";
-import { randomString } from "../../util/helper";
+import {
+  DEFAULT_RANDOM_PARAMETER_VALUE_LENGTH,
+  randomString,
+} from "../../util/helper";
 import { Parameter } from "shared";
 
 interface SizeConfig {
@@ -15,7 +18,7 @@ export const sizeConfigs: Record<string, SizeConfig> = {
     generateParams: (size) =>
       Array.from({ length: size }, () => ({
         name: randomString(10),
-        value: randomString(10),
+        value: randomString(DEFAULT_RANDOM_PARAMETER_VALUE_LENGTH),
       })),
   },
   query: {

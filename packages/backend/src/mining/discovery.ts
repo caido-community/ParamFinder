@@ -1,18 +1,19 @@
-import { MiningSessionPhase, Parameter, RequestResponse } from "shared";
-import { Finding, MiningSessionState } from "shared";
-import { randomString } from "../util/helper";
+import { Anomaly, Finding, MiningSessionPhase, MiningSessionState, Parameter, RequestResponse } from "shared";
+import {
+  DEFAULT_RANDOM_PARAMETER_VALUE_LENGTH,
+  randomString,
+} from "../util/helper";
 import { ParamMiner } from "./param-miner";
 
 interface ChunkResult {
   requestResponse: RequestResponse;
   parameters: Parameter[];
-  anomalyType?: string;
+  anomaly?: Anomaly;
 }
 
 export class ParamDiscovery {
   private readonly paramMiner: ParamMiner;
   private lastWordlistIndex: number;
-  private static readonly PARAMS_VALUES_SIZE = 8;
   private static readonly DEFAULT_HEADER_CHUNK_SIZE = 20;
 
   constructor(paramMiner: ParamMiner) {
@@ -162,17 +163,19 @@ export class ParamDiscovery {
     this.paramMiner.updateState(MiningSessionState.Paused);
   }
 
-  private async handleAnomaly(chunk: Parameter[], anomaly: any): Promise<void> {
+  private async handleAnomaly(chunk: Parameter[], anomaly: Anomaly): Promise<void> {
     if (this.paramMiner.config.ignoreAnomalyTypes.includes(anomaly.type)) {
       return;
     }
 
-    this.emitDebug(`Initial anomaly detected: ${anomaly.type}`);
+    this.emitDebug(
+      `Initial anomaly detected: ${this.describeAnomaly(anomaly)}`
+    );
 
     const verifyResult = await this.verifyAnomaly(chunk);
     if (!verifyResult) return;
 
-    if (verifyResult.anomalyType) {
+    if (verifyResult.anomaly) {
       await this.processVerifiedAnomaly(chunk, verifyResult);
     } else {
       this.emitDebug("Anomaly not verified in second request");
@@ -201,20 +204,50 @@ export class ParamDiscovery {
       chunk
     );
 
-    return verifyAnomaly
-      ? {
-          requestResponse: verifyRequestResponse,
-          parameters: chunk,
-          anomalyType: verifyAnomaly.type,
-        }
-      : undefined;
+    if (!verifyAnomaly) {
+      return undefined;
+    }
+
+    const controlRequestResponse =
+      await this.paramMiner.requester.sendRequestWithParams(
+        this.paramMiner.target,
+        [],
+        "narrower"
+      );
+
+    this.emit("responseReceived", 0, controlRequestResponse);
+
+    if (!(await this.paramMiner.stateManager.continueOrWait())) {
+      this.emitDebug("Discovery canceled during control verification");
+      return;
+    }
+
+    const controlAnomaly = this.paramMiner.anomalyDetector.hasChanges(
+      controlRequestResponse.response,
+      []
+    );
+
+    if (controlAnomaly) {
+      this.emitDebug(
+        `Control request also changed: ${this.describeAnomaly(controlAnomaly)}`
+      );
+      return undefined;
+    }
+
+    return {
+      requestResponse: verifyRequestResponse,
+      parameters: chunk,
+      anomaly: verifyAnomaly,
+    };
   }
 
   private async processVerifiedAnomaly(
     chunk: Parameter[],
     verifyResult: ChunkResult
   ): Promise<void> {
-    this.emitDebug(`Anomaly verified: ${verifyResult.anomalyType}`);
+    this.emitDebug(
+      `Anomaly verified: ${this.describeAnomaly(verifyResult.anomaly)}`
+    );
     this.emitAnomalyLog(chunk.length, verifyResult);
 
     const narrowedDownChunk = await this.narrowDownWordlist([...chunk]);
@@ -231,11 +264,27 @@ export class ParamDiscovery {
   }
 
   private emitAnomalyLog(chunkLength: number, result: ChunkResult): void {
-    const anomaly = result.anomalyType;
+    const anomaly = this.describeAnomaly(result.anomaly);
     this.emitLog(
-      `Anomaly ${anomaly.toUpperCase()} detected in response. ` +
+      `Anomaly ${anomaly} detected in response. ` +
         `Narrowing down ${chunkLength} parameters.`
     );
+  }
+
+  private describeAnomaly(anomaly?: Anomaly): string {
+    if (!anomaly) {
+      return "UNKNOWN";
+    }
+
+    if (anomaly.type === "body" && anomaly.which === "length") {
+      return `BODY (length ${anomaly.from} -> ${anomaly.to})`;
+    }
+
+    if (anomaly.which && anomaly.from && anomaly.to) {
+      return `${anomaly.type.toUpperCase()} (${anomaly.which}: ${anomaly.from} -> ${anomaly.to})`;
+    }
+
+    return anomaly.type.toUpperCase();
   }
 
   private async delay(): Promise<void> {
@@ -324,13 +373,40 @@ export class ParamDiscovery {
           );
 
           if (verifyAnomaly) {
+            const controlRequestResponse =
+              await this.paramMiner.requester.sendRequestWithParams(
+                this.paramMiner.target,
+                [],
+                "narrower"
+              );
+
+            this.emit("responseReceived", 0, controlRequestResponse);
+
+            if (!(await this.paramMiner.stateManager.continueOrWait())) {
+              this.emitDebug("Narrowing canceled during control verification");
+              return findings;
+            }
+
+            const controlAnomaly = this.paramMiner.anomalyDetector.hasChanges(
+              controlRequestResponse.response,
+              []
+            );
+
+            if (controlAnomaly) {
+              this.emitDebug(
+                `Control request also changed for ${parameter.name}: ${this.describeAnomaly(controlAnomaly)}`
+              );
+              continue;
+            }
+
             this.emitDebug(
-              `Parameter verified: ${parameter.name} (${verifyAnomaly.type})`
+              `Parameter verified: ${parameter.name} (${this.describeAnomaly(verifyAnomaly)})`
             );
             findings.push({
               requestResponse: { request, response: verifyResponse },
               parameter,
               anomalyType: verifyAnomaly.type,
+              anomaly: verifyAnomaly,
             });
           } else {
             this.emitDebug(`Parameter verification failed: ${parameter.name}`);
@@ -427,15 +503,16 @@ export class ParamDiscovery {
         continue;
       }
 
+      const value = this.obtainParameterValue();
       const encodedWord = encodeURIComponent(word);
-      const encodedValue = encodeURIComponent(this.obtainParameterValue());
+      const encodedValue = encodeURIComponent(value);
       const paramSize = 2 + encodedWord.length + encodedValue.length;
 
       if (maxSize && currentSize + paramSize > maxSize) {
         break;
       }
 
-      parameterChunk.push({ name: word, value: this.obtainParameterValue() });
+      parameterChunk.push({ name: word, value });
       currentSize += paramSize;
       this.lastWordlistIndex++;
     }
@@ -464,8 +541,9 @@ export class ParamDiscovery {
         continue;
       }
 
+      const value = this.obtainParameterValue();
       const encodedWord = encodeURIComponent(word);
-      const encodedValue = encodeURIComponent(this.obtainParameterValue());
+      const encodedValue = encodeURIComponent(value);
 
       let paramSize = 6 + encodedWord.length + encodedValue.length;
 
@@ -480,7 +558,7 @@ export class ParamDiscovery {
         break;
       }
 
-      parameterChunk.push({ name: word, value: this.obtainParameterValue() });
+      parameterChunk.push({ name: word, value });
       currentSize += paramSize;
       this.lastWordlistIndex++;
     }
@@ -490,10 +568,10 @@ export class ParamDiscovery {
 
   private obtainParameterValue(): string {
     if (this.paramMiner.config.customValue) {
-      return this.paramMiner.config.customValue + randomString(ParamDiscovery.PARAMS_VALUES_SIZE);
+      return this.paramMiner.config.customValue + randomString(DEFAULT_RANDOM_PARAMETER_VALUE_LENGTH);
     }
 
-    return randomString(ParamDiscovery.PARAMS_VALUES_SIZE);
+    return randomString(DEFAULT_RANDOM_PARAMETER_VALUE_LENGTH);
   }
 
   private hasMoreParameters(): boolean {

@@ -26,6 +26,8 @@ function cleanupWordlist(wordlist: string[]) {
 }
 
 /* random string generator */
+export const DEFAULT_RANDOM_PARAMETER_VALUE_LENGTH = 10;
+
 export function randomString(length: number) {
   let result = "";
   const characters = "abcdefghijklmnopqrstuvwxyz0123456789";

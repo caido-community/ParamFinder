@@ -1,4 +1,4 @@
-import { AnomalyType } from "./anomaly";
+import { Anomaly, AnomalyType } from "./anomaly";
 import { Parameter, RequestContext, RequestResponse } from "./requests";
 
 export enum MiningSessionState {
@@ -37,4 +37,5 @@ export type Finding = {
   requestResponse: RequestResponse;
   parameter: Parameter;
   anomalyType: AnomalyType;
+  anomaly?: Anomaly;
 };

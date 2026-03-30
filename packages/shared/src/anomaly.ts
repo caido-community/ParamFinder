@@ -1,5 +1,6 @@
 export interface ResponseFactors {
     bodyStable: boolean;
+    bodyLength: number;
     reflectionStable: boolean;
 
     reflectionsCount: number;
@@ -11,6 +12,7 @@ export interface ResponseFactors {
 
 export type StableFactors = ResponseFactors & {
   bodyStable: boolean;
+  bodyLengthStable: boolean;
   statusCodeStable: boolean;
   reflectionStable: boolean;
   headersStable: boolean;
