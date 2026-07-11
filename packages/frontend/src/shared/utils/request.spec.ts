@@ -25,8 +25,8 @@ describe("request utils", () => {
       query: "q=test",
       method: "POST",
       headers: {
-        Host: ["example.com"],
-        "X-Test": ["one", "two"],
+        host: ["example.com"],
+        "x-test": ["one", "two"],
       },
       body: "body=value",
     });
@@ -68,7 +68,7 @@ describe("request utils", () => {
     ).toMatchObject({
       host: "example.com",
       port: 443,
-      url: "https://example.com:443/override?b=2",
+      url: "https://example.com/override?b=2",
       path: "/override",
       query: "b=2",
       method: "GET",

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { createEngineRequest } from "./request";
+import { createEngineRequest, createEngineRequestFromRaw } from "./request";
 
 describe("createEngineRequest", () => {
   it("derives request fields from a URL and body", () => {
@@ -78,5 +78,50 @@ describe("createEngineRequest", () => {
         url: "ftp://example.com/archive",
       }),
     ).toThrowError("Unsupported URL protocol: ftp:");
+  });
+});
+
+describe("createEngineRequestFromRaw", () => {
+  it("derives structured fields while preserving the raw request", () => {
+    const raw =
+      "PATCH /items?draft=true HTTP/1.1\nHost: example.com\nX-Test: one\nX-Test: two\n\nbody=value";
+    const request = createEngineRequestFromRaw({
+      raw,
+      host: "example.com",
+      port: 443,
+      tls: true,
+      id: "raw-request",
+      context: "learning",
+    });
+
+    expect(request).toMatchObject({
+      id: "raw-request",
+      context: "learning",
+      method: "PATCH",
+      path: "/items",
+      query: "draft=true",
+      url: "https://example.com/items?draft=true",
+      headers: {
+        host: ["example.com"],
+        "x-test": ["one", "two"],
+      },
+      body: "body=value",
+      raw,
+    });
+  });
+
+  it("allows authoritative transport path and query overrides", () => {
+    const request = createEngineRequestFromRaw({
+      raw: "GET /raw?a=1 HTTP/1.1\r\nHost: example.com\r\n\r\n",
+      host: "example.com",
+      port: 80,
+      tls: false,
+      path: "/selected",
+      query: "b=2",
+    });
+
+    expect(request.path).toBe("/selected");
+    expect(request.query).toBe("b=2");
+    expect(request.url).toBe("http://example.com/selected?b=2");
   });
 });

@@ -2,10 +2,10 @@ import { HttpForge } from "ts-http-forge";
 
 import { EngineError } from "./errors";
 import { resolveJsonBodyPath } from "./json-body-path";
+import { createEngineRequestFromRaw } from "./request";
 import {
   type AttackType,
   type EngineRequest,
-  type HeaderMap,
   type InspectableBodyKind,
   MUTABLE_BODY_KINDS,
   type MutableBodyKind,
@@ -13,7 +13,7 @@ import {
   type ParameterValueType,
   type RequestContext,
 } from "./types";
-import { buildUrl, cloneHeaders, getUtf8ByteLength } from "./utils";
+import { getUtf8ByteLength } from "./utils";
 
 interface MutateRequestOptions {
   baseRequest: EngineRequest;
@@ -297,30 +297,16 @@ function toEngineRequest(
   forge: HttpForge,
   context: RequestContext,
 ): EngineRequest {
-  const path = forge.getPath() ?? baseRequest.path;
-  const query = forge.getQuery() ?? "";
-  const headers: HeaderMap =
-    forge.getHeaders() ?? cloneHeaders(baseRequest.headers);
-  const body = forge.getBody() ?? "";
-  const method = forge.getMethod() ?? baseRequest.method;
-
-  return {
-    ...baseRequest,
-    method,
-    path,
-    query,
-    headers,
-    body,
+  return createEngineRequestFromRaw({
     raw: forge.build(),
-    url: buildUrl({
-      host: baseRequest.host,
-      port: baseRequest.port,
-      tls: baseRequest.tls,
-      path,
-      query,
-    }),
+    id: baseRequest.id,
+    host: baseRequest.host,
+    port: baseRequest.port,
+    tls: baseRequest.tls,
     context,
-  };
+    path: forge.getPath() ?? baseRequest.path,
+    method: forge.getMethod() ?? baseRequest.method,
+  });
 }
 
 function extractMultipartBoundary(

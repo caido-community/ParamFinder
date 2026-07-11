@@ -19,6 +19,7 @@ export type { JsonBodyPathSegment } from "./json-body-path";
 export {
   canSendRequestBody,
   createEngineRequest,
+  createEngineRequestFromRaw,
   createEngineRequestHeaders,
 } from "./request";
 export { RunControl } from "./run-control";
@@ -34,6 +35,7 @@ export type {
 export type {
   CreateEngineRequestHeadersInput,
   CreateEngineRequestInput,
+  CreateEngineRequestFromRawInput,
 } from "./request";
 export type {
   RunDiscoveryScanOptions,

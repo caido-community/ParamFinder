@@ -1,3 +1,5 @@
+import { HttpForge } from "ts-http-forge";
+
 import type { EngineRequest, HeaderMap, RequestContext } from "./types";
 import { appendHeader, buildUrl, getUtf8ByteLength, hasHeader } from "./utils";
 
@@ -18,6 +20,49 @@ export interface CreateEngineRequestHeadersInput {
   defaults?: HeaderInput;
   body?: string;
   contentType?: string;
+}
+
+export interface CreateEngineRequestFromRawInput {
+  raw: string;
+  host: string;
+  port: number;
+  tls: boolean;
+  id?: string;
+  context?: RequestContext;
+  path?: string;
+  query?: string;
+  method?: string;
+  headers?: HeaderMap;
+  body?: string;
+}
+
+export function createEngineRequestFromRaw(
+  input: CreateEngineRequestFromRawInput,
+): EngineRequest {
+  const forge = HttpForge.create(input.raw);
+  const path = input.path ?? forge.getPath() ?? "/";
+  const query = input.query ?? forge.getQuery() ?? "";
+
+  return {
+    id: input.id ?? createRequestId(),
+    host: input.host,
+    port: input.port,
+    url: buildUrl({
+      host: input.host,
+      port: input.port,
+      tls: input.tls,
+      path,
+      query,
+    }),
+    path,
+    query,
+    method: input.method ?? forge.getMethod() ?? "GET",
+    headers: input.headers ?? forge.getHeaders() ?? {},
+    body: input.body ?? forge.getBody() ?? "",
+    tls: input.tls,
+    raw: input.raw,
+    context: input.context ?? "discovery",
+  };
 }
 
 export function createEngineRequest(

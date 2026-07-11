@@ -1,3 +1,4 @@
+import { createEngineRequestFromRaw } from "@paramfinder/engine";
 import type { Request } from "shared";
 
 export type ParsedRequest = {
@@ -30,19 +31,19 @@ export function toCrlf(raw: string): string {
 }
 
 export function parseRequest(raw: string): ParsedRequest {
-  const { lines, body } = parseMessage(raw);
-  const [method = "GET", fullPath = "/"] = (lines.shift() ?? "").split(" ");
-  const querySeparator = fullPath.indexOf("?");
-  const path =
-    querySeparator === -1 ? fullPath : fullPath.slice(0, querySeparator);
-  const query = querySeparator === -1 ? "" : fullPath.slice(querySeparator + 1);
+  const request = createEngineRequestFromRaw({
+    raw,
+    host: "localhost",
+    port: 80,
+    tls: false,
+  });
 
   return {
-    path,
-    query,
-    method,
-    headers: parseHeaders(lines),
-    body,
+    path: request.path,
+    query: request.query,
+    method: request.method,
+    headers: request.headers,
+    body: request.body,
   };
 }
 
@@ -76,25 +77,16 @@ function parseHeaders(lines: string[]): Record<string, string[]> {
 export function createRequestFromSelection(
   selection: RawRequestSelection,
 ): Request {
-  const parsed = parseRequest(selection.raw);
-  const path = selection.path ?? parsed.path;
-  const query = selection.query ?? parsed.query;
-  const protocol = selection.isTls ? "https" : "http";
-
-  return {
+  return createEngineRequestFromRaw({
+    raw: selection.raw,
     id: generateID(),
     host: selection.host,
     port: selection.port,
-    url: `${protocol}://${selection.host}:${selection.port}${path}${query ? `?${query}` : ""}`,
-    path,
-    query,
-    method: parsed.method,
-    headers: parsed.headers,
-    body: parsed.body,
     tls: selection.isTls,
-    raw: selection.raw,
+    path: selection.path,
+    query: selection.query,
     context: "discovery",
-  };
+  });
 }
 
 export function generateID(): string {
