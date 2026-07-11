@@ -31,21 +31,11 @@ import { initWordlistManager } from "./wordlists/wordlists";
 export type { API, BackendEvents, Events, Spec } from "./types/types";
 
 export function init(sdk: BackendSDK) {
-  const sessionStore = initSessionStore(sdk);
-  const wordlistManager = initWordlistManager(sdk);
-  const settingsStore = initSettingsStore(sdk);
-  let bootstrapError: string | undefined;
-  const ready = Promise.all([
-    sessionStore.ready,
-    wordlistManager.ready,
-    settingsStore.ready,
-  ])
-    .then(() => undefined)
-    .catch((cause: unknown) => {
-      bootstrapError = getErrorMessage(cause);
-      sdk.console.error(`[BOOTSTRAP] ${bootstrapError}`);
-    });
-  const afterReady =
+  initSessionStore(sdk);
+  initWordlistManager(sdk);
+  initSettingsStore(sdk);
+
+  const guard =
     <Arguments extends unknown[], Value>(
       handler: (
         handlerSdk: BackendSDK,
@@ -56,13 +46,6 @@ export function init(sdk: BackendSDK) {
       handlerSdk: BackendSDK,
       ...args: Arguments
     ): Promise<ApiResult<Value>> => {
-      await ready;
-      if (bootstrapError !== undefined) {
-        return error(
-          `ParamFinder backend initialization failed: ${bootstrapError}`,
-          "IO",
-        );
-      }
       try {
         return await handler(handlerSdk, ...args);
       } catch (cause) {
@@ -72,27 +55,24 @@ export function init(sdk: BackendSDK) {
       }
     };
 
-  sdk.api.register("startMining", afterReady(startMining));
-  sdk.api.register("cancelSession", afterReady(cancelSession));
-  sdk.api.register("pauseSession", afterReady(pauseSession));
-  sdk.api.register("resumeSession", afterReady(resumeSession));
-  sdk.api.register("deleteSessions", afterReady(deleteSessions));
-  sdk.api.register("listSessions", afterReady(listSessions));
-  sdk.api.register("getSessionEntries", afterReady(getSessionEntries));
-  sdk.api.register("getCurrentProjectId", afterReady(getCurrentProjectId));
-  sdk.api.register("getRequest", afterReady(getRequest));
-  sdk.api.register("getWordlists", afterReady(getWordlists));
-  sdk.api.register("clearWordlists", afterReady(clearWordlists));
-  sdk.api.register("importWordlist", afterReady(importWordlist));
-  sdk.api.register("deleteWordlist", afterReady(deleteWordlist));
-  sdk.api.register("setWordlistEnabled", afterReady(setWordlistEnabled));
-  sdk.api.register(
-    "setWordlistAttackTypes",
-    afterReady(setWordlistAttackTypes),
-  );
-  sdk.api.register("getSettings", afterReady(getSettings));
-  sdk.api.register("patchSettings", afterReady(patchSettings));
-  sdk.api.register("getSettingsPath", afterReady(getSettingsPath));
+  sdk.api.register("startMining", guard(startMining));
+  sdk.api.register("cancelSession", guard(cancelSession));
+  sdk.api.register("pauseSession", guard(pauseSession));
+  sdk.api.register("resumeSession", guard(resumeSession));
+  sdk.api.register("deleteSessions", guard(deleteSessions));
+  sdk.api.register("listSessions", guard(listSessions));
+  sdk.api.register("getSessionEntries", guard(getSessionEntries));
+  sdk.api.register("getCurrentProjectId", guard(getCurrentProjectId));
+  sdk.api.register("getRequest", guard(getRequest));
+  sdk.api.register("getWordlists", guard(getWordlists));
+  sdk.api.register("clearWordlists", guard(clearWordlists));
+  sdk.api.register("importWordlist", guard(importWordlist));
+  sdk.api.register("deleteWordlist", guard(deleteWordlist));
+  sdk.api.register("setWordlistEnabled", guard(setWordlistEnabled));
+  sdk.api.register("setWordlistAttackTypes", guard(setWordlistAttackTypes));
+  sdk.api.register("getSettings", guard(getSettings));
+  sdk.api.register("patchSettings", guard(patchSettings));
+  sdk.api.register("getSettingsPath", guard(getSettingsPath));
 
   sdk.console.log("Backend plugin initialized");
 }

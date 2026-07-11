@@ -10,11 +10,16 @@ import { StatusBadge } from "./StatusBadge";
 
 import { getSessionStats } from "@/features/sessions/lib/sessionStats";
 import { useSessionsStore } from "@/features/sessions/stores/sessions.store";
-import { fullHeightCardPt } from "@/shared/utils/cardPt";
 
 defineOptions({ name: "SessionInfo" });
 
 const store = useSessionsStore();
+
+const fullHeightCardPt = {
+  root: { style: "display: flex; flex-direction: column; height: 100%;" },
+  body: { class: "flex-1 p-0 flex flex-col min-h-0" },
+  content: { class: "flex-1 flex flex-col overflow-hidden min-h-0" },
+};
 
 const session = computed(() => store.activeSession);
 const stats = computed(() => getSessionStats(session.value));

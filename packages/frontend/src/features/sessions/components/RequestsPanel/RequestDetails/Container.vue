@@ -8,9 +8,14 @@ import { HTTPEditor } from "./HTTPEditor";
 import { useRequestDetails } from "./useRequestDetails";
 
 import EmptyMessage from "@/shared/components/EmptyMessage.vue";
-import { fullHeightCardPt } from "@/shared/utils/cardPt";
 
 defineOptions({ name: "RequestDetails" });
+
+const fullHeightCardPt = {
+  root: { style: "display: flex; flex-direction: column; height: 100%;" },
+  body: { class: "flex-1 p-0 flex flex-col min-h-0" },
+  content: { class: "flex-1 flex flex-col overflow-hidden min-h-0" },
+};
 
 const { requestResponse, errorMessage, selectedRequestId } =
   useRequestDetails();

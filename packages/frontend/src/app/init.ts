@@ -71,10 +71,16 @@ export const init = (sdk: FrontendSDK) => {
 
   const lifecycle = usePageLifecycle();
   let sidebarCount = 0;
+  let isOnPage = false;
+
+  sdk.navigation.onPageChange((event) => {
+    isOnPage = event.path === "/paramfinder";
+  });
 
   sdk.navigation.addPage("/paramfinder", {
     body: root,
     onEnter: () => {
+      isOnPage = true;
       sidebarCount = 0;
       sidebarItem.setCount(sidebarCount);
       lifecycle.triggerPageEnter();
@@ -108,7 +114,7 @@ export const init = (sdk: FrontendSDK) => {
       notifiedSessions.add(key);
       return true;
     }).length;
-    if (added > 0) {
+    if (added > 0 && !isOnPage) {
       sidebarCount += added;
       sidebarItem.setCount(sidebarCount);
     }

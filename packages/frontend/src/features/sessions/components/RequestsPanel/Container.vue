@@ -9,11 +9,15 @@ import { RequestDetails } from "./RequestDetails";
 import { RequestList } from "./RequestList";
 import { useRequestsTab } from "./useRequestsTab";
 
-import { fullHeightCardPt } from "@/shared/utils/cardPt";
-
 defineOptions({ name: "RequestsPanel" });
 
 const { tab, tabs } = useRequestsTab();
+
+const fullHeightCardPt = {
+  root: { style: "display: flex; flex-direction: column; height: 100%;" },
+  body: { class: "flex-1 p-0 flex flex-col min-h-0" },
+  content: { class: "flex-1 flex flex-col overflow-hidden min-h-0" },
+};
 </script>
 
 <template>

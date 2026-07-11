@@ -4,9 +4,12 @@ import ContextMenu from "primevue/contextmenu";
 
 import { useSessionTabs } from "./useSessionTabs";
 
-import { plainCardPt } from "@/shared/utils/cardPt";
-
 defineOptions({ name: "SessionTabs" });
+
+const plainCardPt = {
+  body: { class: "p-0" },
+  content: { class: "p-0" },
+};
 
 const {
   store,

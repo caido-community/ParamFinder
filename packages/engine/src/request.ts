@@ -174,7 +174,7 @@ function normalizeHeaders(headers?: HeaderInput): HeaderMap {
 
   const normalized: HeaderMap = {};
 
-  if (headers instanceof Headers) {
+  if (typeof Headers !== "undefined" && headers instanceof Headers) {
     headers.forEach((value, name) => {
       appendHeader(normalized, name, value);
     });
