@@ -1,89 +1,68 @@
-import { DefineEvents, SDK } from "caido:plugin";
-import {
-  Finding,
-  MiningSessionPhase,
-  MiningSessionState,
-  RequestContext,
-  RequestResponse,
+import type { DefinePluginPackageSpec } from "@caido/sdk-shared";
+import type { SDK } from "caido:plugin";
+import type {
+  ApiResult,
+  AttackType,
+  CursorPage,
+  ParamMinerConfig,
+  ProjectSessionSnapshot,
+  Request,
+  SessionChangeEnvelope,
+  SessionDescriptor,
+  SessionEntriesQuery,
+  SessionEntry,
+  SessionRef,
+  SettingsDocument,
+  SettingsPatch,
+  Wordlist,
 } from "shared";
 
-export type BackendEvents = DefineEvents<{
-  /**
-   * Notifies client about a new ParamFinder session
-   * @param miningID - Session ID
-   * @param totalParametersAmount - Total number of parameters that will be tested (used for progress tracking)
-   * @param totalLearnRequests - Total number of requests that will be sent to learn target behavior (used for progress tracking)
-   */
-  "paramfinder:new": (
-    miningID: string,
-    totalParametersAmount: number,
-    totalLearnRequests: number,
-  ) => void;
+export type API = {
+  startMining: (
+    target: Request,
+    config: ParamMinerConfig,
+  ) => Promise<ApiResult<SessionDescriptor>>;
+  cancelSession: (ref: SessionRef) => Promise<ApiResult<void>>;
+  pauseSession: (ref: SessionRef) => Promise<ApiResult<void>>;
+  resumeSession: (ref: SessionRef) => Promise<ApiResult<void>>;
+  deleteSessions: (refs: SessionRef[]) => Promise<ApiResult<void>>;
+  listSessions: (
+    projectId: string,
+  ) => Promise<ApiResult<ProjectSessionSnapshot>>;
+  getSessionEntries: (
+    query: SessionEntriesQuery,
+  ) => Promise<ApiResult<CursorPage<SessionEntry>>>;
+  getCurrentProjectId: () => Promise<ApiResult<string | undefined>>;
+  getRequest: (id: string) => Promise<ApiResult<Request>>;
+  getWordlists: () => Promise<ApiResult<Wordlist[]>>;
+  clearWordlists: () => Promise<ApiResult<void>>;
+  importWordlist: (
+    data: string,
+    filename: string,
+  ) => Promise<ApiResult<Wordlist>>;
+  deleteWordlist: (id: string) => Promise<ApiResult<void>>;
+  setWordlistEnabled: (
+    id: string,
+    enabled: boolean,
+  ) => Promise<ApiResult<void>>;
+  setWordlistAttackTypes: (
+    id: string,
+    attackTypes: AttackType[],
+  ) => Promise<ApiResult<void>>;
+  getSettings: () => Promise<ApiResult<SettingsDocument>>;
+  patchSettings: (patch: SettingsPatch) => Promise<ApiResult<SettingsDocument>>;
+  getSettingsPath: () => Promise<ApiResult<string>>;
+};
 
-  /**
-   * Notifies client that a ParamFinder session has completed
-   * @param miningID - Session ID
-   */
-  "paramfinder:complete": (miningID: string) => void;
-
-  /**
-   * Updates client on session progress and sends request/response data
-   * @param miningID - Session ID
-   * @param parametersSent - Number of parameters tested in this request
-   * @param context - Context information for the request
-   * @param requestResponse - Request and response data (omitted in performance mode)
-   */
-  "paramfinder:progress": (
-    miningID: string,
-    parametersSent: number,
-    context: RequestContext,
-    requestResponse?: RequestResponse,
-  ) => void;
-
-  /**
-   * Notifies client about new parameter findings discovered
-   * @param miningID - Session ID
-   * @param finding - Details of the discovered finding
-   */
-  "paramfinder:new_finding": (miningID: string, finding: Finding) => void;
-
-  /**
-   * Notifies client about errors during parameter finding
-   * @param miningID - Session ID
-   * @param error - Error message details
-   */
-  "paramfinder:error": (miningID: string, error: string) => void;
-
-  /**
-   * Updates client about changes in session state
-   * @param miningID - Session ID
-   * @param state - New session state
-   * @param phase - Optional, new session phase
-   */
-  "paramfinder:state": (
-    miningID: string,
-    state: MiningSessionState,
-    phase?: MiningSessionPhase,
-  ) => void;
-
-  /**
-   * Sends a log message to the client
-   * @param miningID - Session ID
-   * @param log - Log message content
-   */
-  "paramfinder:log": (miningID: string, log: string) => void;
-
-  /**
-   * Notifies client about a change in totalParametersAmount
-   * @param miningID - Session ID
-   * @param newAmount - new totalParametersAmount value
-   */
-  "paramfinder:adjust": (miningID: string, newAmount: number) => void;
-
-  /**
-   * Notifies client about an update available
-   */
+export type Events = {
+  "paramfinder:session_change": (envelope: SessionChangeEnvelope) => void;
   "paramfinder:update_available": () => void;
-}>;
+};
 
-export type BackendSDK = SDK<never, BackendEvents>;
+export type Spec = DefinePluginPackageSpec<{
+  manifestId: "paramfinder-plugin";
+  api: API;
+  events: Events;
+}>;
+export type BackendEvents = Events;
+export type BackendSDK = SDK<Spec>;

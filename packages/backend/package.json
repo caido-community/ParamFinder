@@ -1,22 +1,19 @@
 {
   "name": "backend",
-  "version": "0.1.0",
-  "description": "Backend for ParamFinder",
-  "author": "bebiks",
-  "license": "CC0-1.0",
+  "version": "0.0.0",
   "type": "module",
   "types": "src/index.ts",
   "scripts": {
-    "build": "vite build",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsgo --noEmit"
   },
   "dependencies": {
-    "jsonpath-plus": "^10.3.0",
-    "shared": "workspace:*"
+    "@caido/sdk-shared": "^0.2.2",
+    "@paramfinder/engine": "workspace:*",
+    "shared": "workspace:*",
+    "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@caido/sdk-backend": "0.45.1",
-    "@types/node": "^22.13.5",
-    "shared": "workspace:*"
+    "@caido/sdk-backend": "^0.56.2",
+    "vitest": "^3.2.4"
   }
 }

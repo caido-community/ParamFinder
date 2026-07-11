@@ -1,121 +1,100 @@
-import { error, ok, Result, Wordlist, AttackType } from "shared";
-import { BackendSDK } from "../types/types";
+import {
+  type ApiResult,
+  type AttackType,
+  error,
+  ok,
+  type Wordlist,
+} from "shared";
+
+import type { BackendSDK } from "../types/types";
 import { getWordlistManager } from "../wordlists/wordlists";
-import { writeToFile } from "../util/helper";
-
-export async function addWordlistPath(
-  sdk: BackendSDK,
-  path: string,
-): Promise<Result<void>> {
-  const wordlistManager = getWordlistManager();
-
-  try {
-    if (!wordlistManager) {
-      return error("Wordlist manager not initialized");
-    }
-    await wordlistManager.addWordlistPath(path);
-    return ok(void 0);
-  } catch (err) {
-    return error(err instanceof Error ? err.message : String(err));
-  }
-}
-
-export async function removeWordlistPath(
-  sdk: BackendSDK,
-  path: string,
-): Promise<Result<void>> {
-  const wordlistManager = getWordlistManager();
-
-  try {
-    if (!wordlistManager) {
-      return error("Wordlist manager not initialized");
-    }
-    await wordlistManager.removeWordlistPath(path);
-    return ok(void 0);
-  } catch (err) {
-    return error(err instanceof Error ? err.message : String(err));
-  }
-}
 
 export async function getWordlists(
-  sdk: BackendSDK,
-): Promise<Result<Wordlist[]>> {
-  const wordlistManager = getWordlistManager();
-
+  _: BackendSDK,
+): Promise<ApiResult<Wordlist[]>> {
   try {
-    if (!wordlistManager) {
-      return error("Wordlist manager not initialized");
-    }
-    const wordlists = await wordlistManager.getWordlists();
-    return ok(wordlists);
-  } catch (err) {
-    return error(err instanceof Error ? err.message : String(err));
+    return ok(await getWordlistManager().getWordlists());
+  } catch (cause) {
+    return error(cause instanceof Error ? cause.message : String(cause), "IO");
   }
 }
 
-export async function clearWordlists(sdk: BackendSDK): Promise<Result<void>> {
-  const wordlistManager = getWordlistManager();
-
+export async function clearWordlists(_: BackendSDK): Promise<ApiResult<void>> {
   try {
-    if (!wordlistManager) {
-      return error("Wordlist manager not initialized");
-    }
-    await wordlistManager.clearWordlists();
-    return ok(void 0);
-  } catch (err) {
-    return error(err instanceof Error ? err.message : String(err));
-  }
-}
-
-export async function toggleWordlist(
-  sdk: BackendSDK,
-  path: string,
-  enabled: boolean,
-): Promise<Result<void>> {
-  const wordlistManager = getWordlistManager();
-
-  try {
-    if (!wordlistManager) {
-      return error("Wordlist manager not initialized");
-    }
-    await wordlistManager.toggleWordlist(path, enabled);
-    return ok(void 0);
-  } catch (err) {
-    return error(err instanceof Error ? err.message : String(err));
-  }
-}
-
-export async function updateAttackTypes(
-  sdk: BackendSDK,
-  path: string,
-  attackTypes: AttackType[],
-): Promise<Result<void>> {
-  const wordlistManager = getWordlistManager();
-
-  try {
-    if (!wordlistManager) {
-      return error("Wordlist manager not initialized");
-    }
-    await wordlistManager.updateAttackTypes(path, attackTypes);
-    return ok(void 0);
-  } catch (err) {
-    return error(err instanceof Error ? err.message : String(err));
+    await getWordlistManager().clearWordlists();
+    return ok(undefined);
+  } catch (cause) {
+    return error(cause instanceof Error ? cause.message : String(cause), "IO");
   }
 }
 
 export async function importWordlist(
-  sdk: BackendSDK,
+  _: BackendSDK,
   data: string,
   filename: string,
-): Promise<Result<void>> {
-  const wordlistManager = getWordlistManager();
-
+): Promise<ApiResult<Wordlist>> {
+  if (
+    typeof data !== "string" ||
+    typeof filename !== "string" ||
+    !filename.trim()
+  ) {
+    return error("Wordlist data and filename are required.", "VALIDATION");
+  }
   try {
-    const filePath = await writeToFile(sdk, data, filename);
-    sdk.console.log(`[WORDLIST] Imported wordlist from ${filePath}`);
-    await wordlistManager?.addWordlistPath(filePath);
-    return ok(void 0);
-  } catch (err) {
-    return error(err instanceof Error ? err.message : String(err));
+    return ok(await getWordlistManager().importWordlist(data, filename));
+  } catch (cause) {
+    return error(
+      cause instanceof Error ? cause.message : String(cause),
+      cause instanceof TypeError ? "VALIDATION" : "IO",
+    );
+  }
+}
+
+export async function deleteWordlist(
+  _: BackendSDK,
+  id: string,
+): Promise<ApiResult<void>> {
+  if (!id) return error("Wordlist ID is required.", "VALIDATION");
+  try {
+    await getWordlistManager().deleteWordlist(id);
+    return ok(undefined);
+  } catch (cause) {
+    return error(cause instanceof Error ? cause.message : String(cause), "IO");
+  }
+}
+
+export async function setWordlistEnabled(
+  _: BackendSDK,
+  id: string,
+  enabled: boolean,
+): Promise<ApiResult<void>> {
+  if (!id || typeof enabled !== "boolean")
+    return error("Invalid wordlist update.", "VALIDATION");
+  try {
+    await getWordlistManager().setEnabled(id, enabled);
+    return ok(undefined);
+  } catch (cause) {
+    return error(
+      cause instanceof Error ? cause.message : String(cause),
+      "NOT_FOUND",
+    );
+  }
+}
+
+export async function setWordlistAttackTypes(
+  _: BackendSDK,
+  id: string,
+  attackTypes: AttackType[],
+): Promise<ApiResult<void>> {
+  if (!id || !Array.isArray(attackTypes))
+    return error("Invalid wordlist attack types.", "VALIDATION");
+  try {
+    await getWordlistManager().setAttackTypes(id, attackTypes);
+    return ok(undefined);
+  } catch (cause) {
+    return error(
+      cause instanceof Error ? cause.message : String(cause),
+      cause instanceof TypeError ? "VALIDATION" : "NOT_FOUND",
+    );
   }
 }

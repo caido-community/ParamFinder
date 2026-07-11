@@ -1,50 +1,53 @@
-import { error, ok, Result, Settings } from "shared";
-import { BackendSDK } from "../types/types";
-import { getSettingsStore } from "../settings/settings";
+import {
+  type ApiResult,
+  error,
+  ok,
+  type SettingsDocument,
+  type SettingsPatch,
+  settingsPatchSchema,
+} from "shared";
 
-export async function getSettings(sdk: BackendSDK): Promise<Result<Settings>> {
-  const settingsStore = getSettingsStore();
+import { getSettingsStore, SettingsConflictError } from "../settings/settings";
+import type { BackendSDK } from "../types/types";
 
+export async function getSettings(
+  _: BackendSDK,
+): Promise<ApiResult<SettingsDocument>> {
   try {
-    if (!settingsStore) {
-      return error("Settings store not initialized");
-    }
-    const settings = settingsStore.getSettings();
-    return ok(settings);
-  } catch (err) {
-    return error(err instanceof Error ? err.message : String(err));
+    return ok(await getSettingsStore().getSettings());
+  } catch (cause) {
+    return error(cause instanceof Error ? cause.message : String(cause), "IO");
   }
 }
 
-export async function updateSettings(
-  sdk: BackendSDK,
-  settings: Settings,
-): Promise<Result<Settings>> {
-  const settingsStore = getSettingsStore();
-
+export async function patchSettings(
+  _: BackendSDK,
+  patch: SettingsPatch,
+): Promise<ApiResult<SettingsDocument>> {
+  const parsed = settingsPatchSchema.safeParse(patch);
+  if (!parsed.success) {
+    return error("Invalid settings patch.", "VALIDATION", {
+      issues: parsed.error.issues.map((issue) => issue.message),
+    });
+  }
   try {
-    if (!settingsStore) {
-      return error("Settings store not initialized");
+    return ok(
+      await getSettingsStore().patchSettings(
+        parsed.data.revision,
+        parsed.data.changes,
+      ),
+    );
+  } catch (cause) {
+    if (cause instanceof SettingsConflictError) {
+      return error(cause.message, "CONFLICT");
     }
-    const newSettings = settingsStore.updateSettings(settings);
-    return ok(newSettings);
-  } catch (err) {
-    return error(err instanceof Error ? err.message : String(err));
+    if (cause instanceof TypeError) return error(cause.message, "VALIDATION");
+    return error(cause instanceof Error ? cause.message : String(cause), "IO");
   }
 }
 
 export async function getSettingsPath(
-  sdk: BackendSDK,
-): Promise<Result<string>> {
-  const settingsStore = getSettingsStore();
-
-  try {
-    if (!settingsStore) {
-      return error("Settings store not initialized");
-    }
-    const path = settingsStore.getSettingsPath();
-    return ok(path);
-  } catch (err) {
-    return error(err instanceof Error ? err.message : String(err));
-  }
+  _: BackendSDK,
+): Promise<ApiResult<string>> {
+  return ok(getSettingsStore().getSettingsPath());
 }

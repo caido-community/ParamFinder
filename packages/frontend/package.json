@@ -1,42 +1,27 @@
 {
   "name": "frontend",
-  "version": "0.1.0",
-  "description": "Frontend for ParamFinder",
-  "author": "bebiks",
-  "license": "CC0-1.0",
+  "version": "0.0.0",
   "type": "module",
   "scripts": {
-    "build": "vite build",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "vue-tsc --noEmit"
   },
   "dependencies": {
-    "@caido/sdk-frontend": "0.44.1",
-    "@emotion/react": "^11.13.3",
-    "@emotion/styled": "^11.13.0",
-    "@mui/icons-material": "^6.1.1",
-    "@mui/material": "^6.1.1",
-    "@mui/x-data-grid": "^7.23.1",
-    "@nanostores/react": "github:nanostores/react",
-    "@tanstack/react-query": "^5.62.7",
-    "@types/react": "^18.3.12",
-    "@types/react-dom": "^18.3.1",
-    "@types/react-window": "^1.8.8",
-    "allotment": "^1.20.2",
-    "caido-material-ui": "^1.0.4",
-    "jsonpath-plus": "^10.3.0",
-    "nanoevents": "^9.1.0",
-    "nanostores": "^0.11.3",
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "zustand": "^5.0.2"
+    "@caido/primevue": "0.3.3",
+    "@paramfinder/engine": "workspace:*",
+    "@tanstack/vue-virtual": "^3.13.29",
+    "@vueuse/core": "^14.3.0",
+    "pinia": "^2.3.1",
+    "primevue": "4.1.0",
+    "shared": "workspace:*",
+    "vue": "3.5.34"
   },
   "devDependencies": {
-    "@caido/sdk-backend": "0.44.1",
-    "@types/node": "^22.10.1",
-    "@vitejs/plugin-react": "^4.3.4",
+    "@caido/sdk-backend": "^0.56.2",
+    "@caido/sdk-frontend": "^0.56.2",
+    "@codemirror/view": "6.43.0",
+    "@vue/test-utils": "^2.4.6",
     "backend": "workspace:*",
-    "shared": "workspace:*",
-    "tailwindcss": "^3.4.15",
-    "vite": "6.0.2"
+    "happy-dom": "^15.11.7",
+    "vue-tsc": "2.0.29"
   }
 }

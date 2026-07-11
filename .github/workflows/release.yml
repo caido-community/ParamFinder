@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
 
 env:
-  NODE_VERSION: 22
+  NODE_VERSION: 20
   PNPM_VERSION: 9
 
 jobs:
@@ -15,14 +15,15 @@ jobs:
       contents: write
 
     steps:
+      - name: Verify main branch
+        run: |
+          if [[ "${{ github.ref_name }}" != "main" ]]; then
+            echo "Release can only be done on the main branch."
+            exit 1
+          fi
+
       - name: Checkout project
         uses: actions/checkout@v4
-
-      - name: Check version
-        id: meta
-        run: |
-          VERSION=$(jq -r .version manifest.json)
-          echo "version=${VERSION}" >> $GITHUB_OUTPUT
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -48,6 +49,13 @@ jobs:
             openssl pkeyutl -sign -inkey private_key.pem -out plugin_package.zip.sig -rawin -in plugin_package.zip
             rm private_key.pem
           fi
+
+      - name: Check version
+        id: meta
+        working-directory: dist
+        run: |
+          VERSION=$(unzip -p plugin_package.zip manifest.json | jq -r .version)
+          echo "version=${VERSION}" >> $GITHUB_OUTPUT
 
       - name: Create release
         uses: caido/action-release@v1

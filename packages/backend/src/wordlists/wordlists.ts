@@ -1,239 +1,362 @@
-import { SDK } from "caido:plugin";
-import { Wordlist, AttackType } from "shared";
-import { Database } from "sqlite";
-import { deleteFile } from "../util/helper";
-import { BackendSDK } from "../types/types";
+import { Buffer } from "buffer";
+import { access, mkdir, readFile, rename, rm, writeFile } from "fs/promises";
+import path from "path";
 
-const CURRENT_SCHEMA_VERSION = 2;
+import {
+  type AttackType,
+  attackTypeSchema,
+  type Wordlist,
+  wordlistSchema,
+} from "shared";
 
-class WordlistManager {
-  private sdk: SDK;
-  private database: Database | null = null;
+import type { BackendSDK } from "../types/types";
+import { generateID } from "../util/helper";
 
-  constructor(sdk: SDK) {
-    this.sdk = sdk;
-    this.init();
+const MAX_WORDLIST_BYTES = 10 * 1024 * 1024;
+const MANIFEST_VERSION = 1;
+const MANIFEST_FILENAME = "metadata.json";
+const SAFE_ID = /^[a-z0-9_-]+$/i;
+const DEFAULT_ATTACK_TYPES: AttackType[] = ["body", "headers", "query"];
+
+type StoredWordlist = Wordlist;
+type WordlistManifest = {
+  version: typeof MANIFEST_VERSION;
+  wordlists: StoredWordlist[];
+};
+
+export class WordlistManager {
+  private wordlists: StoredWordlist[] = [];
+  private operationQueue: Promise<void>;
+  readonly ready: Promise<void>;
+
+  constructor(private readonly sdk: BackendSDK) {
+    this.ready = this.initialize();
+    this.operationQueue = this.ready;
   }
 
-  private async init(): Promise<boolean> {
-    this.database = await this.sdk.meta.db();
-
-    return await this.setupDatabase();
-  }
-
-  private async setupDatabase(): Promise<boolean> {
-    if (!this.database) return false;
-
-    const versionTableExistsStatement = await this.database.prepare(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name='schema_version'"
-    );
-    const versionTableExists = await versionTableExistsStatement.get();
-
-    if (!versionTableExists) {
-      await this.database.exec(`
-        CREATE TABLE schema_version (
-          version INTEGER PRIMARY KEY,
-          updated_at TEXT
-        )
-      `);
-
-      await this.database.exec(`
-        INSERT INTO schema_version (version, updated_at)
-        VALUES (1, datetime('now'))
-      `);
-    }
-
-    const tableExistsStatement = await this.database.prepare(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name='wordlists'"
-    );
-    const tableExists = await tableExistsStatement.get();
-
-    if (!tableExists) {
-      await this.database.exec(`
-        CREATE TABLE wordlists (
-          path TEXT PRIMARY KEY,
-          attack_types TEXT,
-          enabled INTEGER DEFAULT 1
-        )
-      `);
-
-      await this.updateSchemaVersion(CURRENT_SCHEMA_VERSION);
-      return true;
-    }
-
-    await this.runMigrations();
-    return false;
-  }
-
-  private async getCurrentSchemaVersion(): Promise<number> {
-    if (!this.database) throw new Error("Database not initialized");
-
-    const statement = await this.database.prepare(
-      "SELECT version FROM schema_version ORDER BY version DESC LIMIT 1"
-    );
-    const result = await statement.get();
-    return result ? (result as { version: number }).version : 0;
-  }
-
-  private async updateSchemaVersion(version: number): Promise<void> {
-    if (!this.database) throw new Error("Database not initialized");
-
-    await this.database.exec(`
-      INSERT INTO schema_version (version, updated_at)
-      VALUES (${version}, datetime('now'))
-    `);
-
-    this.sdk.console.log(`[DATABASE] Updated schema version to ${version}`);
-  }
-
-  private async runMigrations(): Promise<void> {
-    const currentVersion = await this.getCurrentSchemaVersion();
-
-    if (currentVersion < CURRENT_SCHEMA_VERSION) {
-      this.sdk.console.log(`[DATABASE] Running migrations from version ${currentVersion} to ${CURRENT_SCHEMA_VERSION}`);
-
-      if (currentVersion < 2) {
-        await this.migrateToV2();
+  async importWordlist(data: string, filename: string): Promise<Wordlist> {
+    return this.serialized(async () => {
+      const bytes = Buffer.byteLength(data, "utf8");
+      if (bytes === 0) throw new TypeError("Wordlist is empty.");
+      if (bytes > MAX_WORDLIST_BYTES) {
+        throw new TypeError("Wordlist exceeds the 10 MiB import limit.");
       }
 
-      await this.updateSchemaVersion(CURRENT_SCHEMA_VERSION);
-    }
-  }
+      const wordlist: StoredWordlist = {
+        id: generateID(),
+        name: sanitizeFilename(filename),
+        enabled: true,
+        attackTypes: [...DEFAULT_ATTACK_TYPES],
+        status: "pending",
+      };
+      await this.persist([...this.wordlists, wordlist]);
 
-  private async migrateToV2(): Promise<void> {
-    if (!this.database) throw new Error("Database not initialized");
-
-    this.sdk.console.log("[DATABASE] Running migration to v2: Adding attack_types column");
-
-    try {
-      // Check if attack_types column exists
-      const columnInfoStatement = await this.database.prepare("PRAGMA table_info(wordlists)");
-      const columns = await columnInfoStatement.all() as Array<{ name: string }>;
-      const hasAttackTypesColumn = columns.some(col => col.name === 'attack_types');
-
-      if (!hasAttackTypesColumn) {
-        // Add attack_types column with default value
-        await this.database.exec(`
-          ALTER TABLE wordlists ADD COLUMN attack_types TEXT DEFAULT 'body,headers,query'
-        `);
-        this.sdk.console.log("[DATABASE] Added attack_types column with default values");
-      } else {
-        this.sdk.console.log("[DATABASE] attack_types column already exists, skipping");
+      const finalPath = this.wordlistPath(wordlist);
+      const temporaryPath = `${finalPath}.tmp`;
+      try {
+        await writeFile(temporaryPath, data);
+        await rename(temporaryPath, finalPath);
+        const active = { ...wordlist, status: "active" as const };
+        await this.replace(active);
+        return active;
+      } catch (cause) {
+        await rm(temporaryPath, { force: true }).catch(() => undefined);
+        await this.replace({
+          ...wordlist,
+          enabled: false,
+          status: "disabled",
+          error: errorMessage(cause),
+        });
+        throw cause;
       }
-    } catch (error) {
-      this.sdk.console.log(`[DATABASE] Migration error: ${error}`);
-      throw error;
-    }
-  }
-
-  async addWordlistPath(path: string, enabled: boolean = true, attackTypes: AttackType[] = ["body", "headers", "query"]): Promise<void> {
-    if (!this.database) throw new Error("Database not initialized");
-
-    const startTime = Date.now();
-    const statement = await this.database.prepare(
-      "INSERT OR IGNORE INTO wordlists (path, enabled, attack_types) VALUES (?, ?, ?)",
-    );
-    await statement.run(path, enabled ? 1 : 0, attackTypes.join(","));
-
-    const timeTaken = Date.now() - startTime;
-    this.sdk.console.log(`[DATABASE] Added wordlist path in ${timeTaken}ms`);
-  }
-
-  async removeWordlistPath(path: string): Promise<void> {
-    if (!this.database) throw new Error("Database not initialized");
-
-    const startTime = Date.now();
-    const statement = await this.database.prepare(
-      "DELETE FROM wordlists WHERE path = ?",
-    );
-    await statement.run(path);
-
-    this.sdk.console.log(`[DATABASE] Removing wordlist path ${path}`);
-    await deleteFile(this.sdk, path);
-
-    const timeTaken = Date.now() - startTime;
-    this.sdk.console.log(`[DATABASE] Removed wordlist path in ${timeTaken}ms`);
+    });
   }
 
   async getWordlists(): Promise<Wordlist[]> {
-    if (!this.database) throw new Error("Database not initialized");
-
-    const startTime = Date.now();
-    const statement = await this.database.prepare(
-      "SELECT path, enabled, attack_types FROM wordlists",
+    return this.serialized(async () =>
+      [...this.wordlists]
+        .sort(compareWordlists)
+        .map((wordlist) => detach(wordlist)),
     );
-    const rows = (await statement.all()) as Array<{
-      path: string;
-      enabled: number;
-      attack_types: string;
-    }>;
-
-    const timeTaken = Date.now() - startTime;
-    this.sdk.console.log(`[DATABASE] Fetched wordlist paths in ${timeTaken}ms`);
-
-    return rows.map((row) => ({
-      path: row.path,
-      enabled: Boolean(row.enabled),
-      attackTypes: (row.attack_types || "body,headers,query").split(",") as AttackType[],
-    }));
   }
 
-  async toggleWordlist(path: string, enabled: boolean): Promise<void> {
-    if (!this.database) throw new Error("Database not initialized");
-
-    const startTime = Date.now();
-    const statement = await this.database.prepare(
-      "UPDATE wordlists SET enabled = ? WHERE path = ?",
+  async getEnabledPaths(attackType: AttackType): Promise<string[]> {
+    return this.serialized(async () =>
+      this.wordlists.flatMap((wordlist) =>
+        wordlist.enabled &&
+        wordlist.status === "active" &&
+        wordlist.attackTypes.includes(attackType)
+          ? [this.wordlistPath(wordlist)]
+          : [],
+      ),
     );
-    await statement.run(enabled ? 1 : 0, path);
+  }
 
-    const timeTaken = Date.now() - startTime;
-    this.sdk.console.log(`[DATABASE] Toggled wordlist in ${timeTaken}ms`);
+  async deleteWordlist(id: string): Promise<void> {
+    return this.serialized(async () => {
+      const wordlist = this.find(id);
+      if (wordlist === undefined) return;
+
+      await this.replace({
+        ...wordlist,
+        enabled: false,
+        status: "pending_delete",
+        error: undefined,
+      });
+      await rm(this.wordlistPath(wordlist), { force: true });
+      await this.persist(this.wordlists.filter((entry) => entry.id !== id));
+    });
   }
 
   async clearWordlists(): Promise<void> {
-    if (!this.database) throw new Error("Database not initialized");
+    return this.serialized(async () => {
+      const pendingDeletes = this.wordlists.map((wordlist) => ({
+        ...wordlist,
+        enabled: false,
+        status: "pending_delete" as const,
+        error: undefined,
+      }));
+      await this.persist(pendingDeletes);
+      for (const wordlist of pendingDeletes) {
+        await rm(this.wordlistPath(wordlist), { force: true });
+      }
+      await this.persist([]);
+    });
+  }
 
-    const wordlists = await this.getWordlists();
-    for (const { path } of wordlists) {
-      await deleteFile(this.sdk, path);
+  async setEnabled(id: string, enabled: boolean): Promise<void> {
+    return this.update(id, (wordlist) => ({ ...wordlist, enabled }));
+  }
+
+  async setAttackTypes(id: string, attackTypes: AttackType[]): Promise<void> {
+    if (
+      attackTypes.length === 0 ||
+      attackTypes.some((value) => !attackTypeSchema.safeParse(value).success)
+    ) {
+      throw new TypeError("At least one valid attack type is required.");
+    }
+    const uniqueAttackTypes = [...new Set(attackTypes)];
+    return this.update(id, (wordlist) => ({
+      ...wordlist,
+      attackTypes: uniqueAttackTypes,
+    }));
+  }
+
+  private async initialize(): Promise<void> {
+    await mkdir(this.managedDirectory(), { recursive: true });
+    await this.recoverInterruptedManifestWrite();
+    this.wordlists = await this.loadManifest();
+    await this.reconcileInterruptedOperations();
+  }
+
+  private async recoverInterruptedManifestWrite(): Promise<void> {
+    const manifestPath = this.manifestPath();
+    const temporaryPath = this.temporaryManifestPath();
+    if (await exists(manifestPath)) {
+      await rm(temporaryPath, { force: true }).catch(() => undefined);
+      return;
+    }
+    if (!(await exists(temporaryPath))) return;
+
+    try {
+      parseManifest(String(await readFile(temporaryPath)));
+      await rename(temporaryPath, manifestPath);
+    } catch {
+      await rm(temporaryPath, { force: true }).catch(() => undefined);
+    }
+  }
+
+  private async loadManifest(): Promise<StoredWordlist[]> {
+    if (!(await exists(this.manifestPath()))) return [];
+    const contents = String(await readFile(this.manifestPath()));
+    try {
+      return parseManifest(contents).wordlists;
+    } catch (cause) {
+      const quarantinePath = `${this.manifestPath()}.quarantine-${Date.now()}`;
+      await rename(this.manifestPath(), quarantinePath);
+      this.sdk.console.error(
+        `[WORDLISTS] Invalid metadata moved to ${quarantinePath}: ${errorMessage(cause)}`,
+      );
+      return [];
+    }
+  }
+
+  private async reconcileInterruptedOperations(): Promise<void> {
+    const reconciled: StoredWordlist[] = [];
+    let changed = false;
+
+    for (const wordlist of this.wordlists) {
+      const filePath = this.wordlistPath(wordlist);
+      await rm(`${filePath}.tmp`, { force: true }).catch(() => undefined);
+
+      if (wordlist.status === "pending_delete") {
+        await rm(filePath, { force: true });
+        changed = true;
+        continue;
+      }
+
+      const fileExists = await exists(filePath);
+      if (wordlist.status === "pending" && fileExists) {
+        reconciled.push({ ...wordlist, status: "active", error: undefined });
+        changed = true;
+        continue;
+      }
+      if (!fileExists && wordlist.status !== "disabled") {
+        reconciled.push({
+          ...wordlist,
+          enabled: false,
+          status: "disabled",
+          error: "Managed wordlist file is missing.",
+        });
+        changed = true;
+        continue;
+      }
+      reconciled.push(wordlist);
     }
 
-    const startTime = Date.now();
-    const statement = await this.database.prepare("DELETE FROM wordlists");
-    await statement.run();
-
-    const timeTaken = Date.now() - startTime;
-    this.sdk.console.log(`[DATABASE] Cleared wordlists in ${timeTaken}ms`);
+    if (changed) await this.persist(reconciled);
   }
 
-  async updateAttackTypes(path: string, attackTypes: AttackType[]): Promise<void> {
-    if (!this.database) throw new Error("Database not initialized");
+  private async update(
+    id: string,
+    change: (wordlist: StoredWordlist) => StoredWordlist,
+  ): Promise<void> {
+    return this.serialized(async () => {
+      const wordlist = this.find(id);
+      if (wordlist === undefined) throw new Error("Wordlist not found.");
+      await this.replace(change(wordlist));
+    });
+  }
 
-    const startTime = Date.now();
-    const statement = await this.database.prepare(
-      "UPDATE wordlists SET attack_types = ? WHERE path = ?",
+  private find(id: string): StoredWordlist | undefined {
+    return this.wordlists.find((wordlist) => wordlist.id === id);
+  }
+
+  private async replace(wordlist: StoredWordlist): Promise<void> {
+    await this.persist(
+      this.wordlists.map((entry) =>
+        entry.id === wordlist.id ? wordlist : entry,
+      ),
     );
-    await statement.run(attackTypes.join(","), path);
+  }
 
-    const timeTaken = Date.now() - startTime;
-    this.sdk.console.log(`[DATABASE] Updated attack types in ${timeTaken}ms`);
+  private async persist(wordlists: StoredWordlist[]): Promise<void> {
+    const manifest: WordlistManifest = {
+      version: MANIFEST_VERSION,
+      wordlists,
+    };
+    const temporaryPath = this.temporaryManifestPath();
+    try {
+      await writeFile(temporaryPath, JSON.stringify(manifest));
+      await rename(temporaryPath, this.manifestPath());
+      this.wordlists = wordlists;
+    } catch (cause) {
+      await rm(temporaryPath, { force: true }).catch(() => undefined);
+      throw cause;
+    }
+  }
+
+  private wordlistPath(wordlist: StoredWordlist): string {
+    return path.join(
+      this.managedDirectory(),
+      `${wordlist.id}-${sanitizeFilename(wordlist.name)}`,
+    );
+  }
+
+  private managedDirectory(): string {
+    return path.join(this.sdk.meta.path(), "wordlists");
+  }
+
+  private manifestPath(): string {
+    return path.join(this.managedDirectory(), MANIFEST_FILENAME);
+  }
+
+  private temporaryManifestPath(): string {
+    return `${this.manifestPath()}.tmp`;
+  }
+
+  private serialized<T>(operation: () => Promise<T>): Promise<T> {
+    const execute = async () => {
+      await this.ready;
+      return operation();
+    };
+    const result = this.operationQueue.then(execute, execute);
+    this.operationQueue = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
   }
 }
 
-let wordlistManager: WordlistManager | null = null;
-
-export function initWordlistManager(sdk: BackendSDK) {
-  if (wordlistManager) {
-    throw new Error("Wordlist manager already initialized");
-  }
-
-  wordlistManager = new WordlistManager(sdk);
-}
-
-export function getWordlistManager(): WordlistManager {
-  if (!wordlistManager) {
-    throw new Error("Wordlist manager not initialized");
-  }
+let wordlistManager: WordlistManager | undefined;
+export function initWordlistManager(sdk: BackendSDK): WordlistManager {
+  wordlistManager ??= new WordlistManager(sdk);
   return wordlistManager;
+}
+export function getWordlistManager(): WordlistManager {
+  if (wordlistManager === undefined)
+    throw new Error("Wordlist manager not initialized");
+  return wordlistManager;
+}
+
+function parseManifest(data: string): WordlistManifest {
+  let value: unknown;
+  try {
+    value = JSON.parse(data);
+  } catch {
+    throw new Error("Wordlist metadata is not valid JSON.");
+  }
+  if (!isRecord(value) || value.version !== MANIFEST_VERSION) {
+    throw new Error("Unsupported wordlist metadata version.");
+  }
+  if (!Array.isArray(value.wordlists)) {
+    throw new Error("Wordlist metadata does not contain a wordlist array.");
+  }
+
+  const ids = new Set<string>();
+  const wordlists = value.wordlists.map((entry) => {
+    const parsed = wordlistSchema.safeParse(entry);
+    if (!parsed.success) throw new Error("Wordlist metadata is invalid.");
+    if (!SAFE_ID.test(parsed.data.id))
+      throw new Error("Wordlist metadata contains an unsafe ID.");
+    if (ids.has(parsed.data.id)) {
+      throw new Error("Wordlist metadata contains duplicate IDs.");
+    }
+    ids.add(parsed.data.id);
+    return detach(parsed.data);
+  });
+  return { version: MANIFEST_VERSION, wordlists };
+}
+
+function sanitizeFilename(filename: string): string {
+  const safe = path.basename(filename).replace(/[^a-zA-Z0-9._-]/g, "_");
+  if (!safe || safe === "." || safe === "..") return "wordlist.txt";
+  return safe;
+}
+
+function compareWordlists(left: Wordlist, right: Wordlist): number {
+  const byName = left.name.localeCompare(right.name);
+  return byName === 0 ? left.id.localeCompare(right.id) : byName;
+}
+
+function detach(wordlist: Wordlist): Wordlist {
+  return { ...wordlist, attackTypes: [...wordlist.attackTypes] };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function errorMessage(cause: unknown): string {
+  return cause instanceof Error ? cause.message : String(cause);
+}
+
+async function exists(filePath: string): Promise<boolean> {
+  try {
+    await access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
 }

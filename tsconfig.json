@@ -10,6 +10,7 @@
     "strict": true,
     "skipLibCheck": true,
     "resolveJsonModule": true,
+    "customConditions": ["development"],
 
     "moduleResolution": "bundler",
     "esModuleInterop": true,
@@ -19,6 +20,6 @@
     "useDefineForClassFields": true,
     "isolatedModules": true,
 
-    "baseUrl": "."
+    "types": ["node"]
   }
 }
