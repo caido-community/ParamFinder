@@ -11,8 +11,8 @@ export type SessionEntryCache = {
   filter?: string;
   stale: boolean;
   requestId: number;
-  knownEntries: Set<string>;
-  pendingEntries: Set<string>;
+  knownEntries: Record<string, true>;
+  pendingEntries: Record<string, true>;
 };
 
 export function createEntryCache(
@@ -28,8 +28,8 @@ export function createEntryCache(
     filter,
     stale: false,
     requestId: 0,
-    knownEntries: new Set(),
-    pendingEntries: new Set(),
+    knownEntries: {},
+    pendingEntries: {},
   };
 }
 
@@ -38,12 +38,14 @@ export function appendPage(
   page: CursorPage<SessionEntry>,
 ): SessionEntryCache {
   const newEntries = page.items.filter(
-    (entry) => !cache.knownEntries.has(entryKey(entry)),
+    (entry) => cache.knownEntries[entryKey(entry)] === undefined,
   );
+  const knownEntries = { ...cache.knownEntries };
+  const pendingEntries = { ...cache.pendingEntries };
   for (const entry of newEntries) {
     const key = entryKey(entry);
-    cache.knownEntries.add(key);
-    cache.pendingEntries.delete(key);
+    knownEntries[key] = true;
+    delete pendingEntries[key];
   }
   const newestSequence = Math.max(
     cache.snapshotMaxSequence,
@@ -62,6 +64,8 @@ export function appendPage(
     loading: false,
     error: undefined,
     stale: cache.stale && newestSequence > page.snapshotMaxSequence,
+    knownEntries,
+    pendingEntries,
   };
 }
 
@@ -91,8 +95,10 @@ export function replacePage(
     loading: false,
     error: undefined,
     stale: false,
-    knownEntries: new Set(entries.map(entryKey)),
-    pendingEntries: new Set(),
+    knownEntries: Object.fromEntries(
+      entries.map((entry) => [entryKey(entry), true]),
+    ),
+    pendingEntries: {},
   };
 }
 
@@ -101,23 +107,23 @@ export function appendEntry(
   entry: SessionEntry,
 ): SessionEntryCache {
   const key = entryKey(entry);
-  if (cache.knownEntries.has(key) || cache.pendingEntries.has(key))
+  if (cache.knownEntries[key] === true || cache.pendingEntries[key] === true)
     return cache;
   if (!isLiveSequenceCache(cache)) {
-    cache.pendingEntries.add(key);
     return {
       ...cache,
       total: cache.total + 1,
       snapshotMaxSequence: Math.max(cache.snapshotMaxSequence, entry.sequence),
       stale: true,
+      pendingEntries: { ...cache.pendingEntries, [key]: true },
     };
   }
-  cache.knownEntries.add(key);
-  cache.entries.push(entry);
   return {
     ...cache,
+    entries: [...cache.entries, entry],
     total: cache.total + 1,
     snapshotMaxSequence: Math.max(cache.snapshotMaxSequence, entry.sequence),
+    knownEntries: { ...cache.knownEntries, [key]: true },
   };
 }
 
@@ -129,8 +135,8 @@ export function appendEntries(
   const additions = entries.filter((entry) => {
     const key = entryKey(entry);
     if (
-      cache.knownEntries.has(key) ||
-      cache.pendingEntries.has(key) ||
+      cache.knownEntries[key] === true ||
+      cache.pendingEntries[key] === true ||
       batchEntries.has(key)
     )
       return false;
@@ -141,9 +147,8 @@ export function appendEntries(
 
   const canMaterialize = isLiveSequenceCache(cache);
   if (!canMaterialize) {
-    for (const entry of additions) {
-      cache.pendingEntries.add(entryKey(entry));
-    }
+    const pendingEntries = { ...cache.pendingEntries };
+    for (const entry of additions) pendingEntries[entryKey(entry)] = true;
     return {
       ...cache,
       total: cache.total + additions.length,
@@ -152,11 +157,11 @@ export function appendEntries(
         cache.snapshotMaxSequence,
       ),
       stale: true,
+      pendingEntries,
     };
   }
-  for (const entry of additions) {
-    cache.knownEntries.add(entryKey(entry));
-  }
+  const knownEntries = { ...cache.knownEntries };
+  for (const entry of additions) knownEntries[entryKey(entry)] = true;
   return {
     ...cache,
     entries: [...cache.entries, ...additions],
@@ -165,6 +170,7 @@ export function appendEntries(
       (maximum, current) => Math.max(maximum, current.sequence),
       cache.snapshotMaxSequence,
     ),
+    knownEntries,
   };
 }
 

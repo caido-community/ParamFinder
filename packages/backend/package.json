@@ -7,10 +7,8 @@
     "typecheck": "tsgo --noEmit"
   },
   "dependencies": {
-    "@caido/sdk-shared": "^0.2.2",
     "@paramfinder/engine": "workspace:*",
-    "shared": "workspace:*",
-    "zod": "^4.4.3"
+    "shared": "workspace:*"
   },
   "devDependencies": {
     "@caido/sdk-backend": "^0.56.2",

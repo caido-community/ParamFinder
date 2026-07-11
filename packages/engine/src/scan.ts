@@ -8,6 +8,7 @@ import type { EngineRunInput, EngineRunResult } from "./types";
 export type {
   ScanEvent,
   ScanFindingSummary,
+  ScanOutcomeState,
   ScanProgress,
   ScanRequestSummary,
   ScanSummary,

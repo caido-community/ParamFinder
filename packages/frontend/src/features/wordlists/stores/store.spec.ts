@@ -22,39 +22,40 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
-describe("wordlist mutation queue", () => {
+describe("wordlist mutations", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
   });
 
-  it("serializes mutations and coalesces their refresh", async () => {
+  it("rejects a concurrent mutation instead of queuing stale input", async () => {
     const first = deferred<ReturnType<typeof ok<void>>>();
     const setWordlistEnabled = vi
       .fn((_id: string, _enabled: boolean) => first.promise)
-      .mockImplementationOnce(() => first.promise)
-      .mockResolvedValueOnce(ok(undefined));
+      .mockImplementationOnce(() => first.promise);
     const getWordlists = vi.fn(async () => ok<Wordlist[]>([]));
     sdkHolder.current = {
       backend: { setWordlistEnabled, getWordlists },
     } as unknown as FrontendSDK;
     const store = useWordlistsStore();
     const one: Wordlist = {
-      id: "one",
-      name: "one.txt",
+      path: "/one.txt",
       enabled: true,
       attackTypes: ["query"],
-      status: "active",
     };
-    const two: Wordlist = { ...one, id: "two", name: "two.txt" };
+    const two: Wordlist = { ...one, path: "/two.txt" };
 
     const firstMutation = store.toggle(one);
-    const secondMutation = store.toggle(two);
+    const secondMutation = await store.toggle(two);
     expect(setWordlistEnabled).toHaveBeenCalledTimes(1);
+    expect(secondMutation).toMatchObject({
+      success: false,
+      error: { code: "CONFLICT" },
+    });
 
     first.resolve(ok(undefined));
-    await Promise.all([firstMutation, secondMutation]);
+    await firstMutation;
 
-    expect(setWordlistEnabled).toHaveBeenCalledTimes(2);
+    expect(setWordlistEnabled).toHaveBeenCalledTimes(1);
     expect(getWordlists).toHaveBeenCalledTimes(1);
   });
 });

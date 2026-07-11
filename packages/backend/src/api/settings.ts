@@ -2,48 +2,34 @@ import {
   type ApiResult,
   error,
   ok,
-  type SettingsDocument,
-  type SettingsPatch,
-  settingsPatchSchema,
+  type Settings,
+  type SettingsChanges,
+  settingsChangesSchema,
 } from "shared";
 
-import { getSettingsStore, SettingsConflictError } from "../settings/settings";
+import { getSettingsStore } from "../settings/settings";
 import type { BackendSDK } from "../types/types";
-import { getErrorMessage } from "../util/errors";
 
-export async function getSettings(
-  _: BackendSDK,
-): Promise<ApiResult<SettingsDocument>> {
-  try {
-    return ok(await getSettingsStore().getSettings());
-  } catch (cause) {
-    return error(getErrorMessage(cause), "IO");
-  }
+export async function getSettings(_: BackendSDK): Promise<ApiResult<Settings>> {
+  return ok(await getSettingsStore().getSettings());
 }
 
 export async function patchSettings(
   _: BackendSDK,
-  patch: SettingsPatch,
-): Promise<ApiResult<SettingsDocument>> {
-  const parsed = settingsPatchSchema.safeParse(patch);
+  changes: SettingsChanges,
+): Promise<ApiResult<Settings>> {
+  const parsed = settingsChangesSchema.safeParse(changes);
   if (!parsed.success) {
     return error("Invalid settings patch.", "VALIDATION", {
       issues: parsed.error.issues.map((issue) => issue.message),
     });
   }
+
   try {
-    return ok(
-      await getSettingsStore().patchSettings(
-        parsed.data.revision,
-        parsed.data.changes,
-      ),
-    );
+    return ok(await getSettingsStore().patchSettings(parsed.data));
   } catch (cause) {
-    if (cause instanceof SettingsConflictError) {
-      return error(cause.message, "CONFLICT");
-    }
     if (cause instanceof TypeError) return error(cause.message, "VALIDATION");
-    return error(getErrorMessage(cause), "IO");
+    throw cause;
   }
 }
 

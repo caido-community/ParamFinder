@@ -467,6 +467,152 @@ describe("createDiscoveryEngine", () => {
     expect(result.findings).toHaveLength(0);
   });
 
+  it("keeps a status finding when the surrounding controls have unrelated body drift", async () => {
+    let controlCount = 0;
+    const profile = createReflectionProfile();
+    profile.stableFactors.bodyStable = true;
+    profile.stableFactors.reflectionStable = false;
+    const engine = createTestEngine({
+      provider: {
+        async send(request): Promise<EngineRequestResponse> {
+          const isSecret = new URLSearchParams(request.query).has("secret");
+          let body = "baseline response";
+          if (request.context === "narrower" && !isSecret) {
+            controlCount += 1;
+            body = `ambient control ${controlCount}`;
+          }
+
+          return {
+            request,
+            response: {
+              requestId: request.id,
+              status: isSecret ? 500 : 200,
+              headers: {},
+              body,
+              time: 10,
+              raw: `HTTP/1.1 ${isSecret ? 500 : 200} OK\r\n\r\n${body}`,
+            },
+          };
+        },
+      },
+      random: createSequentialRandom(),
+    });
+
+    const result = await engine.discover({
+      request: createBaseRequest(),
+      words: ["secret"],
+      engineConfig: createConfig({ maxParametersAmount: 1 }),
+      profile,
+    });
+
+    expect(result.findings).toHaveLength(1);
+    expect(result.findings[0]?.parameter.name).toBe("secret");
+    expect(result.findings[0]?.anomaly.type).toBe(AnomalyType.StatusCode);
+  });
+
+  it("reduces discovery chunks when matched random canaries reproduce the anomaly", async () => {
+    const events: DiscoveryEvent[] = [];
+    const profile = createReflectionProfile();
+    profile.stableFactors.bodyStable = true;
+    profile.stableFactors.reflectionStable = false;
+    const engine = createTestEngine({
+      provider: {
+        async send(request): Promise<EngineRequestResponse> {
+          const query = new URLSearchParams(request.query);
+          const isSecret = query.has("secret");
+          const genericManyParameterResponse = query.size > 1;
+          const body = genericManyParameterResponse
+            ? "generic many-parameter response"
+            : "baseline response";
+
+          return {
+            request,
+            response: {
+              requestId: request.id,
+              status: isSecret ? 500 : 200,
+              headers: {},
+              body,
+              time: 10,
+              raw: `HTTP/1.1 ${isSecret ? 500 : 200} OK\r\n\r\n${body}`,
+            },
+          };
+        },
+      },
+      random: createSequentialRandom(),
+    });
+
+    const result = await engine.discover({
+      request: createBaseRequest(),
+      words: ["alpha", "beta", "secret"],
+      engineConfig: createConfig({
+        maxQuerySize: 1000,
+        maxParametersAmount: 3,
+      }),
+      profile,
+      runOptions: { onEvent: (event) => events.push(event) },
+    });
+
+    expect(result.findings.map((finding) => finding.parameter.name)).toEqual([
+      "secret",
+    ]);
+    expect(
+      events.some(
+        (event) =>
+          event.type === "log" &&
+          event.message.includes("reducing discovery chunks to 1 parameter"),
+      ),
+    ).toBe(true);
+  });
+
+  it("refreshes a stale baseline from dedicated canaries before discovery", async () => {
+    const events: DiscoveryEvent[] = [];
+    const profile = createReflectionProfile();
+    profile.stableFactors.bodyStable = true;
+    profile.stableFactors.reflectionStable = false;
+    const engine = createTestEngine({
+      provider: {
+        async send(request): Promise<EngineRequestResponse> {
+          const isSecret = new URLSearchParams(request.query).has("secret");
+          const body = "new baseline response";
+          return {
+            request,
+            response: {
+              requestId: request.id,
+              status: isSecret ? 500 : 200,
+              headers: {},
+              body,
+              time: 10,
+              raw: `HTTP/1.1 ${isSecret ? 500 : 200} OK\r\n\r\n${body}`,
+            },
+          };
+        },
+      },
+      random: createSequentialRandom(),
+    });
+
+    const result = await engine.discover({
+      request: createBaseRequest(),
+      words: ["alpha", "secret"],
+      engineConfig: createConfig({ maxParametersAmount: 1 }),
+      profile,
+      runOptions: { onEvent: (event) => events.push(event) },
+    });
+
+    expect(result.findings.map((finding) => finding.parameter.name)).toEqual([
+      "secret",
+    ]);
+    expect(profile.initialRequestResponse.response.body).toBe(
+      "new baseline response",
+    );
+    expect(
+      events.some(
+        (event) =>
+          event.type === "log" &&
+          event.message.includes("Baseline drift detected during calibration"),
+      ),
+    ).toBe(true);
+  });
+
   it("rejects a finding when the control window disagrees in different ways", async () => {
     let narrowerRequestCount = 0;
     const engine = createTestEngine({

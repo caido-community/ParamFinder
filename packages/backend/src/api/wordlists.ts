@@ -4,10 +4,13 @@ import {
   error,
   ok,
   type Wordlist,
+  wordlistAttackTypesUpdateSchema,
+  wordlistEnabledUpdateSchema,
+  wordlistImportSchema,
+  wordlistPathSchema,
 } from "shared";
 
 import type { BackendSDK } from "../types/types";
-import { getErrorMessage } from "../util/errors";
 import {
   getWordlistManager,
   WordlistNotFoundError,
@@ -16,20 +19,12 @@ import {
 export async function getWordlists(
   _: BackendSDK,
 ): Promise<ApiResult<Wordlist[]>> {
-  try {
-    return ok(await getWordlistManager().getWordlists());
-  } catch (cause) {
-    return error(getErrorMessage(cause), "IO");
-  }
+  return ok(await getWordlistManager().getWordlists());
 }
 
 export async function clearWordlists(_: BackendSDK): Promise<ApiResult<void>> {
-  try {
-    await getWordlistManager().clearWordlists();
-    return ok(undefined);
-  } catch (cause) {
-    return error(getErrorMessage(cause), "IO");
-  }
+  await getWordlistManager().clearWordlists();
+  return ok(undefined);
 }
 
 export async function importWordlist(
@@ -37,72 +32,63 @@ export async function importWordlist(
   data: string,
   filename: string,
 ): Promise<ApiResult<Wordlist>> {
-  if (
-    typeof data !== "string" ||
-    typeof filename !== "string" ||
-    !filename.trim()
-  ) {
+  const input = wordlistImportSchema.safeParse({ data, filename });
+  if (!input.success) {
     return error("Wordlist data and filename are required.", "VALIDATION");
   }
-  try {
-    return ok(await getWordlistManager().importWordlist(data, filename));
-  } catch (cause) {
-    return error(
-      getErrorMessage(cause),
-      cause instanceof TypeError ? "VALIDATION" : "IO",
-    );
-  }
+
+  return ok(
+    await getWordlistManager().importWordlist(
+      input.data.data,
+      input.data.filename,
+    ),
+  );
 }
 
 export async function deleteWordlist(
   _: BackendSDK,
-  id: string,
+  path: string,
 ): Promise<ApiResult<void>> {
-  if (!id) return error("Wordlist ID is required.", "VALIDATION");
+  const input = wordlistPathSchema.safeParse(path);
+  if (!input.success) return error("Wordlist path is required.", "VALIDATION");
+
   try {
-    await getWordlistManager().deleteWordlist(id);
+    await getWordlistManager().deleteWordlist(input.data);
     return ok(undefined);
   } catch (cause) {
-    return error(getErrorMessage(cause), "IO");
+    if (cause instanceof WordlistNotFoundError)
+      return error(cause.message, "NOT_FOUND");
+    throw cause;
   }
 }
 
 export async function setWordlistEnabled(
   _: BackendSDK,
-  id: string,
+  path: string,
   enabled: boolean,
 ): Promise<ApiResult<void>> {
-  if (!id || typeof enabled !== "boolean")
-    return error("Invalid wordlist update.", "VALIDATION");
-  try {
-    await getWordlistManager().setEnabled(id, enabled);
-    return ok(undefined);
-  } catch (cause) {
-    return error(
-      getErrorMessage(cause),
-      cause instanceof WordlistNotFoundError ? "NOT_FOUND" : "IO",
-    );
-  }
+  const input = wordlistEnabledUpdateSchema.safeParse({ path, enabled });
+  if (!input.success) return error("Invalid wordlist update.", "VALIDATION");
+
+  await getWordlistManager().setEnabled(input.data.path, input.data.enabled);
+  return ok(undefined);
 }
 
 export async function setWordlistAttackTypes(
   _: BackendSDK,
-  id: string,
+  path: string,
   attackTypes: AttackType[],
 ): Promise<ApiResult<void>> {
-  if (!id || !Array.isArray(attackTypes))
+  const input = wordlistAttackTypesUpdateSchema.safeParse({
+    path,
+    attackTypes,
+  });
+  if (!input.success)
     return error("Invalid wordlist attack types.", "VALIDATION");
-  try {
-    await getWordlistManager().setAttackTypes(id, attackTypes);
-    return ok(undefined);
-  } catch (cause) {
-    return error(
-      getErrorMessage(cause),
-      cause instanceof TypeError
-        ? "VALIDATION"
-        : cause instanceof WordlistNotFoundError
-          ? "NOT_FOUND"
-          : "IO",
-    );
-  }
+
+  await getWordlistManager().setAttackTypes(
+    input.data.path,
+    input.data.attackTypes,
+  );
+  return ok(undefined);
 }

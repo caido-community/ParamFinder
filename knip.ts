@@ -3,8 +3,8 @@ import type { RawConfigurationOrFn } from "knip/dist/types/config.js";
 const config: RawConfigurationOrFn = {
   ignoreExportsUsedInFile: true,
   rules: {
-    exports: "off",
-    types: "off",
+    exports: "error",
+    types: "error",
   },
   workspaces: {
     ".": {
@@ -12,7 +12,7 @@ const config: RawConfigurationOrFn = {
     },
     "packages/backend": {
       project: ["src/**/*.ts"],
-      ignoreDependencies: ["caido"],
+      ignoreDependencies: ["caido", "sqlite"],
     },
     "packages/shared": {
       project: ["src/**/*.ts"],

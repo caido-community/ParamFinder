@@ -5,6 +5,8 @@ import {
   type LoggerLevel,
   type RequestContext,
   type ScanEvent,
+  type ScanFindingSummary,
+  type ScanOutcomeState,
   type ScanSummary,
 } from "@paramfinder/engine";
 
@@ -61,8 +63,8 @@ class HumanReporter implements Reporter {
   private readonly isTty = Boolean(process.stderr.isTTY);
   private readonly useColor = shouldUseColor(process.stderr.isTTY);
   private lastStatusLength = 0;
-  private currentState = EngineState.Pending;
-  private currentPhase = EnginePhase.Idle;
+  private currentState: EngineState = EngineState.Pending;
+  private currentPhase: EnginePhase = EnginePhase.Idle;
   private spinnerIndex = 0;
 
   constructor(options: { quiet: boolean; verbose: boolean }) {
@@ -225,7 +227,7 @@ class HumanReporter implements Reporter {
     process.stderr.write(`${message}\n`);
   }
 
-  private writeFinding(finding: ScanSummary["findings"][number]): void {
+  private writeFinding(finding: ScanFindingSummary): void {
     this.writeLine(
       `${this.bold(finding.parameter)} -> ${describeFindingForUser(finding)}`,
     );
@@ -347,15 +349,13 @@ function normalizeLogMessage(message: string): string {
   return `${toTitleCase(tag.replaceAll("_", " "))}: ${rest}`;
 }
 
-function describeFindingForUser(
-  finding: ScanSummary["findings"][number],
-): string {
+function describeFindingForUser(finding: ScanFindingSummary): string {
   const reason = describeFindingReason(finding.anomalyType);
   return `${reason} (${finding.anomaly})`;
 }
 
 function describeFindingReason(
-  anomalyType: ScanSummary["findings"][number]["anomalyType"],
+  anomalyType: ScanFindingSummary["anomalyType"],
 ): string {
   switch (anomalyType) {
     case "body":
@@ -433,7 +433,7 @@ function getStateColor(state: EngineState): string {
   }
 }
 
-function getOutcomeHeading(state: ScanSummary["state"]): string {
+function getOutcomeHeading(state: ScanOutcomeState): string {
   switch (state) {
     case EngineState.Completed:
       return "Scan complete";
@@ -448,7 +448,7 @@ function getOutcomeHeading(state: ScanSummary["state"]): string {
   }
 }
 
-function getOutcomeColor(state: ScanSummary["state"]): string {
+function getOutcomeColor(state: ScanOutcomeState): string {
   switch (state) {
     case EngineState.Completed:
       return "32";

@@ -129,7 +129,8 @@ export function createParameterChunkVerifier(
       candidateVsBefore &&
       candidateVsAfter &&
       anomaliesMatch(candidateVsBefore, candidateVsAfter) &&
-      !controlWindowAnomaly
+      (!controlWindowAnomaly ||
+        !anomaliesMatch(candidateVsBefore, controlWindowAnomaly))
     ) {
       return {
         anomaly:

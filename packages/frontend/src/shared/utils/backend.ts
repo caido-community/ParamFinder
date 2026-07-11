@@ -1,4 +1,4 @@
-import type { ApiError, ApiResult } from "shared";
+import { apiErrorSchema, type ApiResult } from "shared";
 
 import type { FrontendSDK } from "@/types";
 
@@ -7,20 +7,12 @@ export function toErrorMessage(err: unknown): string {
     return err.message;
   }
 
-  if (isApiError(err)) {
-    return err.message;
+  const apiError = apiErrorSchema.safeParse(err);
+  if (apiError.success) {
+    return apiError.data.message;
   }
 
   return String(err);
-}
-
-function isApiError(value: unknown): value is ApiError {
-  return (
-    typeof value === "object" &&
-    value !== null &&
-    "message" in value &&
-    typeof value.message === "string"
-  );
 }
 
 export function unwrapResult<T>(result: ApiResult<T>): T {

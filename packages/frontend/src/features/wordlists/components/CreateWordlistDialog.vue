@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { storeToRefs } from "pinia";
 import Button from "primevue/button";
 import Dialog from "primevue/dialog";
 import InputText from "primevue/inputtext";
@@ -19,6 +20,7 @@ const emit = defineEmits<{
 }>();
 
 const wordlistsStore = useWordlistsStore();
+const { mutation } = storeToRefs(wordlistsStore);
 const { showResult } = useActionResult();
 
 const filename = ref("custom-params.txt");
@@ -102,7 +104,7 @@ const submit = async () => {
         <Button label="Cancel" severity="secondary" outlined @click="close" />
         <Button
           label="Create"
-          :disabled="!canSubmit"
+          :disabled="!canSubmit || mutation !== undefined"
           :loading="submitting"
           @click="submit"
         />

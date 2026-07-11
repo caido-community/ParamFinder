@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useVirtualizer } from "@tanstack/vue-virtual";
-import { computed, ref } from "vue";
+import { computed, nextTick, ref, watch } from "vue";
 
 import type { VirtualSortColumn, VirtualSortRow } from "./virtualSortTable";
 
@@ -124,6 +124,18 @@ const rowVirtualizer = useVirtualizer(
       return row === undefined ? index : getRowKey(row);
     },
   })),
+);
+
+watch(
+  () => sortedRows.value.length,
+  async (rowCount, previousRowCount) => {
+    if (rowCount <= previousRowCount) {
+      return;
+    }
+
+    await nextTick();
+    rowVirtualizer.value.measure();
+  },
 );
 
 const totalSize = computed(() => rowVirtualizer.value.getTotalSize());

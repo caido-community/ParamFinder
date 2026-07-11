@@ -2,7 +2,7 @@ import { defineStore } from "pinia";
 import type { AttackType } from "shared";
 import { ref } from "vue";
 
-export type AdvancedScanResult = {
+export type AdvancedScanOptions = {
   attackType: AttackType;
   customValue?: string;
   jsonBodyPath?: string;
@@ -13,7 +13,7 @@ export type AdvancedScanResult = {
 export type AdvancedScanRequest = {
   initialAttackType?: AttackType;
   jsonBody?: string;
-  resolve: (result: AdvancedScanResult | undefined) => void;
+  resolve: (result: AdvancedScanOptions | undefined) => void;
 };
 
 export const useScanDialogStore = defineStore("scanDialog", () => {
@@ -22,7 +22,7 @@ export const useScanDialogStore = defineStore("scanDialog", () => {
   const open = (options: {
     initialAttackType?: AttackType;
     jsonBody?: string;
-  }): Promise<AdvancedScanResult | undefined> => {
+  }): Promise<AdvancedScanOptions | undefined> => {
     if (request.value !== undefined) {
       request.value.resolve(undefined);
     }
@@ -35,7 +35,7 @@ export const useScanDialogStore = defineStore("scanDialog", () => {
     });
   };
 
-  const submit = (result: AdvancedScanResult) => {
+  const submit = (result: AdvancedScanOptions) => {
     request.value?.resolve(result);
     request.value = undefined;
   };

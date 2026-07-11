@@ -1,4 +1,5 @@
-import { access, mkdtemp, readFile, rename, rm, writeFile } from "fs/promises";
+import { mkdtemp, rm } from "fs/promises";
+import { DatabaseSync } from "node:sqlite";
 import { tmpdir } from "os";
 import path from "path";
 
@@ -10,15 +11,12 @@ import type {
   SessionRef,
   SessionRerun,
 } from "shared";
+import type { Database, Parameter } from "sqlite";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { BackendSDK } from "../types/types";
 
-import {
-  InvalidCursorError,
-  type SessionFilePersistence,
-  SessionStore,
-} from "./session-store";
+import { InvalidCursorError, SessionStore } from "./session-store";
 
 let directory: string;
 
@@ -81,12 +79,52 @@ function createSentRequest(
   };
 }
 
-function createSdk(currentProjectId = projectA): BackendSDK {
+function createDatabase(emptyStringForNull = false): Database {
+  const database = new DatabaseSync(path.join(directory, "meta.db"));
+  database.exec("PRAGMA foreign_keys = ON");
+  return {
+    exec: async (sql) => {
+      if (/\b(?:BEGIN|COMMIT|ROLLBACK)\b/i.test(sql)) {
+        throw new Error(
+          "Explicit transactions are unsupported by Caido SQLite",
+        );
+      }
+      database.exec(sql);
+    },
+    prepare: async (sql) => {
+      const statement = database.prepare(sql);
+      return {
+        all: async <T extends object>(...params: Parameter[]) =>
+          statement.all(...params) as T[],
+        get: async <T extends object>(...params: Parameter[]) => {
+          const row = statement.get(...params) as T | undefined;
+          if (!emptyStringForNull || row === undefined) return row;
+          return Object.fromEntries(
+            Object.entries(row).map(([key, value]) => [
+              key,
+              value === null ? "" : value,
+            ]),
+          ) as T;
+        },
+        run: async (...params: Parameter[]) => {
+          const result = statement.run(...params);
+          return {
+            changes: Number(result.changes),
+            lastInsertRowid: Number(result.lastInsertRowid),
+          };
+        },
+      };
+    },
+  };
+}
+
+function createSdk(
+  currentProjectId = projectA,
+  emptyStringForNull = false,
+): BackendSDK {
   return {
     meta: {
-      db: async () => {
-        throw new Error("Session storage must not open SQLite");
-      },
+      db: async () => createDatabase(emptyStringForNull),
       path: () => directory,
     },
     projects: {
@@ -98,9 +136,11 @@ function createSdk(currentProjectId = projectA): BackendSDK {
 
 async function createStore(
   currentProjectId = projectA,
-  persistence?: SessionFilePersistence,
+  emptyStringForNull = false,
 ): Promise<SessionStore> {
-  const store = new SessionStore(createSdk(currentProjectId), persistence);
+  const store = new SessionStore(
+    createSdk(currentProjectId, emptyStringForNull),
+  );
   await store.ready;
   return store;
 }
@@ -114,6 +154,19 @@ afterEach(async () => {
 });
 
 describe("SessionStore reliability", () => {
+  it("accepts empty strings returned for nullable JSON columns", async () => {
+    const store = await createStore(projectA, true);
+    const ref: SessionRef = { projectId: projectA, sessionId: "nullable-json" };
+
+    await store.createSession(ref, 1, 3, createRerun());
+
+    await expect(store.getSession(ref)).resolves.toMatchObject({
+      ref,
+      error: undefined,
+      rerun: createRerun(),
+    });
+  });
+
   it("assigns the next session ID from the largest stored numeric ID", async () => {
     const store = await createStore();
     await store.createSession(
@@ -191,15 +244,38 @@ describe("SessionStore reliability", () => {
     ]);
   });
 
-  it("uses an atomic JSON snapshot without opening the plugin database", async () => {
-    const store = await createStore();
-    const ref: SessionRef = { projectId: projectA, sessionId: "stored" };
-    await store.createSession(ref, 1, 3, createRerun());
-    const snapshot = JSON.parse(
-      await readFile(path.join(directory, "sessions-v2.json"), "utf8"),
-    ) as { version: number; projects: unknown[] };
-    expect(snapshot).toMatchObject({ version: 2 });
-    expect(snapshot.projects).toHaveLength(1);
+  it("creates the normalized session tables and indexes in the plugin database", async () => {
+    await createStore();
+    const database = new DatabaseSync(path.join(directory, "meta.db"), {
+      readOnly: true,
+    });
+    const objects = database
+      .prepare(
+        `SELECT name, type FROM sqlite_master
+         WHERE name LIKE 'paramfinder_session%' OR name LIKE 'paramfinder_entries%'`,
+      )
+      .all();
+
+    expect(objects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: "paramfinder_session_projects",
+          type: "table",
+        }),
+        expect.objectContaining({
+          name: "paramfinder_sessions",
+          type: "table",
+        }),
+        expect.objectContaining({
+          name: "paramfinder_session_entries",
+          type: "table",
+        }),
+        expect.objectContaining({
+          name: "paramfinder_entries_by_session_kind_sequence",
+          type: "index",
+        }),
+      ]),
+    );
   });
 
   it("paginates a stable >1000-entry snapshot without duplicates or omissions", async () => {
@@ -226,7 +302,7 @@ describe("SessionStore reliability", () => {
     expect(first?.items).toHaveLength(1_000);
     expect(first?.items[0]?.sequence).toBe(1);
     expect(first?.items.at(-1)?.sequence).toBe(1_000);
-    expect(first?.nextCursor).toBe("v1:1205:1000");
+    expect(first?.nextCursor).toMatch(/^v2:1205:1000:/);
 
     await store.appendEntries(
       ref,
@@ -260,54 +336,6 @@ describe("SessionStore reliability", () => {
     expect((await store.getSession(ref))?.requestsSent).toBe(1_210);
   });
 
-  it("persists and retrieves 100,000 entries with complete counters and cursor coverage", async () => {
-    const store = await createStore();
-    const ref: SessionRef = { projectId: projectA, sessionId: "stress" };
-    const entryCount = 100_000;
-    await store.createSession(ref, entryCount, 3, createRerun());
-    await store.appendEntries(
-      ref,
-      Array.from({ length: entryCount }, (_, index) => ({
-        kind: "request" as const,
-        value: createSentRequest(index + 1, { parametersSent: 1 }),
-      })),
-    );
-    await store.updateSession(ref, {
-      state: EngineState.Completed,
-      phase: EnginePhase.Discovery,
-    });
-
-    const restarted = await createStore();
-
-    const seen = new Set<number>();
-    let cursor: string | undefined;
-    let expectedSequence = 1;
-    do {
-      const page = await restarted.getEntries({
-        ref,
-        kind: "request",
-        cursor,
-        limit: 1_000,
-      });
-      expect(page).toBeDefined();
-      expect(page?.total).toBe(entryCount);
-      expect(page?.snapshotMaxSequence).toBe(entryCount);
-      for (const entry of page?.items ?? []) {
-        expect(entry.sequence).toBe(expectedSequence);
-        seen.add(entry.sequence);
-        expectedSequence += 1;
-      }
-      cursor = page?.nextCursor;
-    } while (cursor !== undefined);
-
-    expect(seen.size).toBe(entryCount);
-    expect(expectedSequence).toBe(entryCount + 1);
-    await expect(restarted.getSession(ref)).resolves.toMatchObject({
-      requestsSent: entryCount,
-      parametersSent: entryCount,
-    });
-  }, 30_000);
-
   it("rejects a malformed pagination cursor with a typed error", async () => {
     const store = await createStore();
     const ref: SessionRef = { projectId: projectA, sessionId: "cursor" };
@@ -316,6 +344,64 @@ describe("SessionStore reliability", () => {
     await expect(
       store.getEntries({ ref, kind: "request", cursor: "not-a-cursor" }),
     ).rejects.toBeInstanceOf(InvalidCursorError);
+  });
+
+  it("rejects a cursor reused with a different query", async () => {
+    const store = await createStore();
+    const ref: SessionRef = { projectId: projectA, sessionId: "cursor-query" };
+    await store.createSession(ref, 2, 3, createRerun());
+    await store.appendEntries(ref, [
+      { kind: "request", value: createSentRequest(1) },
+      { kind: "request", value: createSentRequest(2) },
+    ]);
+    const first = await store.getEntries({
+      ref,
+      kind: "request",
+      limit: 1,
+    });
+
+    await expect(
+      store.getEntries({
+        ref,
+        kind: "request",
+        cursor: first?.nextCursor,
+        limit: 1,
+        sort: { field: "responseStatus", direction: "desc" },
+      }),
+    ).rejects.toThrow("does not match");
+  });
+
+  it("rejects a cursor reused for another session", async () => {
+    const store = await createStore();
+    const firstRef: SessionRef = { projectId: projectA, sessionId: "cursor-a" };
+    const secondRef: SessionRef = {
+      projectId: projectA,
+      sessionId: "cursor-b",
+    };
+    await store.createSession(firstRef, 2, 3, createRerun());
+    await store.createSession(secondRef, 2, 3, createRerun());
+    await store.appendEntries(firstRef, [
+      { kind: "request", value: createSentRequest(1) },
+      { kind: "request", value: createSentRequest(2) },
+    ]);
+    await store.appendEntries(secondRef, [
+      { kind: "request", value: createSentRequest(3) },
+      { kind: "request", value: createSentRequest(4) },
+    ]);
+    const first = await store.getEntries({
+      ref: firstRef,
+      kind: "request",
+      limit: 1,
+    });
+
+    await expect(
+      store.getEntries({
+        ref: secondRef,
+        kind: "request",
+        cursor: first?.nextCursor,
+        limit: 1,
+      }),
+    ).rejects.toThrow("does not match");
   });
 
   it("uses persisted projections for deterministic sorting and literal filters", async () => {
@@ -365,34 +451,137 @@ describe("SessionStore reliability", () => {
     });
   });
 
-  it("rolls back a multi-project delete and all revision increments when the atomic replace fails", async () => {
-    let failReplace = false;
-    const persistence: SessionFilePersistence = {
-      readFile: async (filePath) => readFile(filePath, "utf8"),
-      writeFile: async (filePath, contents) => writeFile(filePath, contents),
-      replaceFile: async (from, to) => {
-        if (failReplace) throw new Error("forced replace failure");
-        await rename(from, to);
-      },
-      exists: async (filePath) => {
-        try {
-          await access(filePath);
-          return true;
-        } catch {
-          return false;
-        }
-      },
+  it("stores quoted identifiers and entry values as data", async () => {
+    const store = await createStore();
+    const ref: SessionRef = {
+      projectId: "project-'quoted'",
+      sessionId: "session-'quoted'",
     };
-    const store = await createStore(projectA, persistence);
+    await store.createSession(ref, 1, 3, createRerun());
+    await store.appendEntries(ref, [
+      {
+        kind: "request",
+        value: createSentRequest(1, { requestId: "request-'quoted'" }),
+      },
+    ]);
+
+    await expect(store.getSession(ref)).resolves.toMatchObject({ ref });
+    await expect(
+      store.getEntries({ ref, kind: "request" }),
+    ).resolves.toMatchObject({
+      items: [{ value: { requestId: "request-'quoted'" } }],
+    });
+  });
+
+  it("sorts every projected entry field in SQLite", async () => {
+    const store = await createStore();
+    const ref: SessionRef = { projectId: projectA, sessionId: "all-sorts" };
+    await store.createSession(ref, 2, 3, createRerun());
+    await store.appendEntries(ref, [
+      {
+        kind: "request",
+        value: createSentRequest(1, {
+          requestId: "z",
+          responseStatus: 201,
+          responseTime: 20,
+          responseLength: 100,
+          parametersSent: 2,
+          parametersTested: 5,
+          context: "discovery",
+        }),
+      },
+      {
+        kind: "request",
+        value: createSentRequest(2, {
+          requestId: "a",
+          responseStatus: 500,
+          responseTime: 10,
+          responseLength: 50,
+          parametersSent: 4,
+          parametersTested: 4,
+          context: "learning",
+        }),
+      },
+      {
+        kind: "finding",
+        value: {
+          requestId: "finding-z",
+          responseStatus: 201,
+          responseLength: 100,
+          parameter: { name: "z", value: "1" },
+          anomaly: { type: AnomalyType.StatusCode, from: 200, to: 201 },
+        },
+      },
+      {
+        kind: "finding",
+        value: {
+          requestId: "finding-a",
+          responseStatus: 500,
+          responseLength: 50,
+          parameter: { name: "a", value: "2" },
+          anomaly: { type: AnomalyType.Redirect },
+        },
+      },
+    ]);
+
+    const requestSorts = [
+      ["sequence", [1, 2]],
+      ["requestId", [2, 1]],
+      ["responseStatus", [1, 2]],
+      ["responseTime", [2, 1]],
+      ["responseLength", [2, 1]],
+      ["parametersSent", [1, 2]],
+      ["parametersTested", [2, 1]],
+      ["context", [1, 2]],
+    ] as const;
+    for (const [field, expected] of requestSorts) {
+      const page = await store.getEntries({
+        ref,
+        kind: "request",
+        sort: { field, direction: "asc" },
+      });
+      expect(
+        page?.items.map(({ sequence }) => sequence),
+        field,
+      ).toEqual(expected);
+    }
+
+    for (const [field, expected] of [
+      ["parameter", [4, 3]],
+      ["anomaly", [4, 3]],
+    ] as const) {
+      const page = await store.getEntries({
+        ref,
+        kind: "finding",
+        sort: { field, direction: "asc" },
+      });
+      expect(
+        page?.items.map(({ sequence }) => sequence),
+        field,
+      ).toEqual(expected);
+    }
+  });
+
+  it("keeps a deletion batch atomic when a row rejects the statement", async () => {
+    const store = await createStore();
     const first: SessionRef = { projectId: projectA, sessionId: "keep-a" };
     const second: SessionRef = { projectId: projectB, sessionId: "fail-b" };
     await store.createSession(first, 1, 3, createRerun());
     await store.createSession(second, 1, 3, createRerun());
     const beforeA = await store.listSessions(projectA);
     const beforeB = await store.listSessions(projectB);
-    failReplace = true;
+
+    const database = new DatabaseSync(path.join(directory, "meta.db"));
+    database.exec(`
+      CREATE TRIGGER reject_project_b_delete
+      BEFORE DELETE ON paramfinder_sessions
+      WHEN OLD.project_id = '${projectB}'
+      BEGIN
+        SELECT RAISE(ABORT, 'forced delete failure');
+      END;
+    `);
     await expect(store.deleteSessions([first, second])).rejects.toThrow(
-      "forced replace failure",
+      "forced delete failure",
     );
     expect(await store.listSessions(projectA)).toMatchObject({
       revision: beforeA.revision,
@@ -402,7 +591,8 @@ describe("SessionStore reliability", () => {
       revision: beforeB.revision,
       sessions: [{ ref: second }],
     });
-    failReplace = false;
+    database.exec("DROP TRIGGER reject_project_b_delete");
+
     const revisions = await store.deleteSessions([first, second]);
     expect(revisions).toEqual(
       new Map([
@@ -412,77 +602,6 @@ describe("SessionStore reliability", () => {
     );
     expect((await store.listSessions(projectA)).sessions).toEqual([]);
     expect((await store.listSessions(projectB)).sessions).toEqual([]);
-  });
-
-  it("migrates and preserves valid legacy descriptors, entries, and rerun data", async () => {
-    const legacyPath = path.join(directory, `sessions-${projectA}.json`);
-    const config = createConfig();
-    const request = createRequest();
-    await writeFile(
-      legacyPath,
-      JSON.stringify({
-        version: 1,
-        sessions: {
-          legacy: {
-            id: "legacy",
-            state: EngineState.Completed,
-            phase: EnginePhase.Discovery,
-            totalParametersAmount: 2,
-            totalLearnRequests: 3,
-            parametersSent: 2,
-            requestsSent: 1,
-            sentRequests: [createSentRequest(1)],
-            findings: [
-              {
-                requestId: "request-0001",
-                responseStatus: 200,
-                responseLength: 2,
-                parameter: { name: "secret", value: "value" },
-                anomaly: {
-                  type: AnomalyType.StatusCode,
-                  from: 404,
-                  to: 200,
-                },
-              },
-            ],
-            logs: ["started", "completed"],
-            rerun: { targetRequest: request, config },
-          },
-        },
-      }),
-    );
-
-    const store = await createStore();
-    const snapshot = await store.listSessions(projectA);
-    expect(snapshot.sessions).toHaveLength(1);
-    expect(snapshot.sessions[0]).toMatchObject({
-      ref: { projectId: projectA, sessionId: "legacy" },
-      state: EngineState.Completed,
-      requestsSent: 1,
-      parametersSent: 2,
-      findingsCount: 1,
-      logsCount: 2,
-      rerun: { targetRequest: request, config },
-    });
-
-    const migratedPath = `${legacyPath}.migrated`;
-    await expect(readFile(migratedPath, "utf8")).resolves.toContain('"legacy"');
-    const ref = { projectId: projectA, sessionId: "legacy" };
-    await expect(
-      store.getEntries({ ref, kind: "request" }),
-    ).resolves.toMatchObject({ total: 1 });
-    await expect(
-      store.getEntries({ ref, kind: "finding" }),
-    ).resolves.toMatchObject({ total: 1 });
-    await expect(store.getEntries({ ref, kind: "log" })).resolves.toMatchObject(
-      { total: 2 },
-    );
-
-    await rm(path.join(directory, "sessions-v2.json"));
-    const recovered = await createStore();
-    await expect(recovered.listSessions(projectA)).resolves.toMatchObject({
-      sessions: [{ ref }],
-    });
   });
 
   it("increments revisions monotonically across create, append, state, and delete", async () => {

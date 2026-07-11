@@ -22,18 +22,35 @@ import {
   setWordlistAttackTypes,
   setWordlistEnabled,
 } from "./api/wordlists";
+import { pauseSessionsOutsideProject } from "./engine/session-manager";
 import { initSessionStore } from "./sessions/session-store";
 import { initSettingsStore } from "./settings/settings";
 import type { BackendSDK } from "./types/types";
 import { getErrorMessage } from "./util/errors";
 import { initWordlistManager } from "./wordlists/wordlists";
 
-export type { API, BackendEvents, Events, Spec } from "./types/types";
+export type { API, Events, Spec } from "shared";
 
 export function init(sdk: BackendSDK) {
-  initSessionStore(sdk);
-  initWordlistManager(sdk);
+  const database = sdk.meta.db();
+  const sessions = initSessionStore(sdk, database);
+  initWordlistManager(
+    sdk,
+    sessions.ready.then(() => database),
+  );
   initSettingsStore(sdk);
+
+  sdk.events.onProjectChange(async (eventSdk, project) => {
+    const result = await pauseSessionsOutsideProject(
+      eventSdk,
+      project?.getId(),
+    );
+    if (!result.success) {
+      eventSdk.console.error(
+        `[SESSIONS] Could not pause sessions after project change: ${result.error.message}`,
+      );
+    }
+  });
 
   const guard =
     <Arguments extends unknown[], Value>(
@@ -51,6 +68,7 @@ export function init(sdk: BackendSDK) {
       } catch (cause) {
         const message = getErrorMessage(cause);
         sdk.console.error(`[API] ${message}`);
+
         return error(`ParamFinder backend operation failed: ${message}`, "IO");
       }
     };

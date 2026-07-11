@@ -24,6 +24,8 @@
     "typecheck": "tsgo --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@caido/sdk-shared": "^0.2.2",
+    "@paramfinder/engine": "workspace:*",
     "zod": "^4.4.3"
   }
 }

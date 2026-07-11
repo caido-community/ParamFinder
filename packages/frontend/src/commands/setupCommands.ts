@@ -1,5 +1,6 @@
 import type { CommandContext } from "@caido/sdk-frontend";
-import type { AttackType, Request, Settings, SettingsDocument } from "shared";
+import { validateMutationTarget } from "@paramfinder/engine";
+import type { AttackType, Request, Settings } from "shared";
 
 import { resolveContextRequests } from "./requestSource";
 
@@ -10,11 +11,10 @@ import {
 import { useScanDialogStore } from "@/features/scan/stores/scanDialog";
 import { useSessionsStore } from "@/features/sessions/stores/sessions.store";
 import { attackTypes } from "@/shared/constants/attackTypes";
-import { handleBackendCall } from "@/shared/utils/backend";
+import { handleBackendCall, toErrorMessage } from "@/shared/utils/backend";
 import { parseRequest } from "@/shared/utils/request";
 import type { FrontendSDK } from "@/types";
 
-type AdvancedOptions = AdvancedScanOptions;
 const requestMenuTypes = ["RequestRow", "Request"] as const;
 const advancedScanCommandId = "paramfinder:advanced-scan";
 
@@ -91,7 +91,7 @@ async function runFromContext(
   sdk: FrontendSDK,
   context: CommandContext,
   attackType: AttackType,
-  options: AdvancedOptions,
+  options: AdvancedScanOptions,
 ): Promise<void> {
   const requests = await resolveRequestsOrNotify(sdk, context);
   if (requests.length > 0) {
@@ -125,35 +125,94 @@ async function runForRequests(
   sdk: FrontendSDK,
   requests: Request[],
   attackType: AttackType,
-  options: AdvancedOptions,
+  options: AdvancedScanOptions,
 ): Promise<void> {
-  const settingsDocument = await handleBackendCall<SettingsDocument>(
-    sdk.backend.getSettings(),
-    sdk,
-  );
-  for (const request of requests) {
-    await startMining(
+  let settings: Settings;
+  try {
+    settings = await handleBackendCall<Settings>(
+      sdk.backend.getSettings(),
       sdk,
-      request,
-      settingsDocument.settings,
-      attackType,
-      options,
     );
+  } catch {
+    return;
   }
-}
 
-async function startMining(
-  sdk: FrontendSDK,
-  request: Request,
-  settings: Settings,
-  attackType: AttackType,
-  options: AdvancedOptions,
-): Promise<void> {
   const config = buildMiningConfig(settings, attackType, options);
   const sessions = useSessionsStore();
-  await handleBackendCall(sessions.startSession(request, config), sdk);
-  sdk.window.showToast(`Started Param Finder [${attackType.toUpperCase()}]`, {
-    variant: "info",
-    duration: 2000,
+  const failures: string[] = [];
+  const validRequests: Request[] = [];
+
+  for (const request of requests) {
+    try {
+      validateMutationTarget({
+        baseRequest: request,
+        attackType,
+        customValueType: config.customValueType,
+        jsonBodyPath: config.jsonBodyPath,
+      });
+      validRequests.push(request);
+    } catch (err: unknown) {
+      failures.push(toErrorMessage(err));
+    }
+  }
+
+  let started = 0;
+  for (const request of validRequests) {
+    try {
+      const result = await sessions.startSession(request, config);
+      if (result.success) {
+        started += 1;
+      } else {
+        failures.push(result.error.message);
+      }
+    } catch (err: unknown) {
+      failures.push(toErrorMessage(err));
+    }
+  }
+
+  showStartSummary(sdk, attackType, requests.length, started, failures);
+}
+
+function showStartSummary(
+  sdk: FrontendSDK,
+  attackType: AttackType,
+  total: number,
+  started: number,
+  failures: string[],
+): void {
+  const scanLabel = `Param Finder [${attackType.toUpperCase()}]`;
+  if (failures.length === 0) {
+    const message =
+      started === 1
+        ? `Started ${scanLabel}`
+        : `Started ${started} ${scanLabel} scans`;
+    sdk.window.showToast(message, { variant: "info", duration: 2000 });
+    return;
+  }
+
+  const prefix =
+    started === 0
+      ? `Could not start ${scanLabel} for ${formatRequestCount(total)}`
+      : `Started ${started} of ${total} ${scanLabel} scans`;
+  sdk.window.showToast(`${prefix}. ${summarizeFailures(failures)}`, {
+    variant: started === 0 ? "error" : "warning",
+    duration: 10_000,
   });
+}
+
+function formatRequestCount(count: number): string {
+  return `${count} request${count === 1 ? "" : "s"}`;
+}
+
+function summarizeFailures(failures: string[]): string {
+  const counts = new Map<string, number>();
+  for (const failure of failures) {
+    counts.set(failure, (counts.get(failure) ?? 0) + 1);
+  }
+
+  return [...counts]
+    .map(([message, count]) =>
+      count === 1 ? message : `${message} (${count} requests)`,
+    )
+    .join("; ");
 }

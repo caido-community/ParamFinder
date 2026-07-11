@@ -36,6 +36,11 @@ interface MutationBudgetOptions {
   jsonBodyPath?: string;
 }
 
+type ValidateMutationTargetOptions = Pick<
+  MutateRequestOptions,
+  "baseRequest" | "attackType" | "customValueType" | "jsonBodyPath"
+>;
+
 interface RequestMutationMetadata {
   bodyKind: InspectableBodyKind;
   multipartBoundary?: string;
@@ -78,6 +83,17 @@ export function mutateRequest(options: MutateRequestOptions): EngineRequest {
   }
 
   return toEngineRequest(options.baseRequest, forge, options.context);
+}
+
+export function validateMutationTarget(
+  options: ValidateMutationTargetOptions,
+): void {
+  mutateRequest({
+    ...options,
+    parameters: [{ name: "paramfinder-validation", value: "1" }],
+    context: "learning",
+    updateContentLength: false,
+  });
 }
 
 export function wouldExceedMutationBudget(

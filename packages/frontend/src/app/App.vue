@@ -4,12 +4,12 @@ import MenuBar from "primevue/menubar";
 import type { Component } from "vue";
 import { computed, onMounted, ref } from "vue";
 
-import { AdvancedScanDialog } from "@/features/scan/components/AdvancedScanDialog";
-import { Sessions } from "@/features/sessions/components";
-import Settings from "@/features/settings/components/Container.vue";
+import AdvancedScanDialog from "@/features/scan/components/AdvancedScanDialog/AdvancedScanDialog.vue";
+import Sessions from "@/features/sessions/components/SessionsPage.vue";
+import Settings from "@/features/settings/components/SettingsPage.vue";
 import { useSettingsStore } from "@/features/settings/stores/store";
-import Usage from "@/features/usage/components/Container.vue";
-import Wordlists from "@/features/wordlists/components/Container.vue";
+import Usage from "@/features/usage/components/UsagePage.vue";
+import Wordlists from "@/features/wordlists/components/WordlistsPage.vue";
 import { useWordlistsStore } from "@/features/wordlists/stores/store";
 import { useActionResult } from "@/shared/composables/useActionResult";
 

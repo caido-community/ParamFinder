@@ -1,10 +1,12 @@
 import {
   type DiscoveryEvent,
+  EngineError,
   EnginePhase,
   EngineState,
   type Finding,
   RunControl,
   runDiscoveryScan,
+  validateMutationTarget,
 } from "@paramfinder/engine";
 import {
   type ApiError,
@@ -52,6 +54,7 @@ const terminalStates = new Set<string>([
   EngineState.Canceled,
   EngineState.Timeout,
 ]);
+const TERMINAL_PERSIST_ATTEMPTS = 2;
 
 export async function startEngineSession(
   sdk: BackendSDK,
@@ -60,6 +63,15 @@ export async function startEngineSession(
   config: ParamMinerConfig,
 ): Promise<ApiResult<SessionDescriptor>> {
   try {
+    validateMutationTarget({
+      baseRequest: target,
+      attackType: config.attackType,
+      customValueType: config.customValueType,
+      jsonBodyPath: config.jsonBodyPath,
+    });
+    const engineConfig = toEngineConfig(config);
+    const baseRunOptions = toRunOptions(config);
+
     const words = await loadWords(config);
     if (words.length === 0) {
       return error(
@@ -89,50 +101,56 @@ export async function startEngineSession(
       finalizing: false,
     };
     runningSessions.set(sessionKey(ref), running);
-    emitSessionChanges(sdk, projectId, created.revision, [
-      { type: "upsert", session: created.session },
-    ]);
-    // Finish the only startup file write before the first transport future is
-    // spawned. The engine's duplicate Learning event becomes a no-op.
-    const started = await persistState(
-      sdk,
-      ref,
-      EngineState.Learning,
-      EnginePhase.Learning,
-      running,
-    ).catch((cause: unknown) => {
-      running.acceptingEvents = false;
-      controller.abort();
-      deleteRunningSession(ref, running);
-      throw cause;
-    });
-    if (started === undefined) {
-      deleteRunningSession(ref, running);
-      return error("Session disappeared during startup.", "NOT_FOUND");
-    }
 
-    const scanPromise = runDiscoveryScan(
-      {
-        provider,
-      },
-      {
-        request: target,
-        words,
-        engineConfig: toEngineConfig(config),
-        runOptions: toRunOptions(config, {
-          signal: controller.signal,
-          runControl,
-          onEvent: (event) => {
-            const current = runningSessions.get(sessionKey(ref));
-            if (current === running && running.acceptingEvents) {
-              enqueueEvent(running, async () => {
-                await persistDiscoveryEvent(sdk, ref, config, event, running);
-              });
-            }
+    let started: SessionDescriptor | undefined;
+    let scanPromise: ReturnType<typeof runDiscoveryScan>;
+    try {
+      emitSessionChanges(sdk, projectId, created.revision, [
+        { type: "upsert", session: created.session },
+      ]);
+
+      // Finish the only startup file write before the first transport future
+      // is spawned. The engine's duplicate Learning event becomes a no-op.
+      started = await persistState(
+        sdk,
+        ref,
+        EngineState.Learning,
+        EnginePhase.Learning,
+        running,
+      );
+      if (started === undefined) {
+        deleteRunningSession(ref, running);
+        return error("Session disappeared during startup.", "NOT_FOUND");
+      }
+
+      scanPromise = runDiscoveryScan(
+        {
+          provider,
+        },
+        {
+          request: target,
+          words,
+          engineConfig,
+          runOptions: {
+            ...baseRunOptions,
+            signal: controller.signal,
+            runControl,
+            onEvent: (event) => {
+              const current = runningSessions.get(sessionKey(ref));
+              if (current === running && running.acceptingEvents) {
+                enqueueEvent(running, async () => {
+                  await persistDiscoveryEvent(sdk, ref, config, event, running);
+                });
+              }
+            },
           },
-        }),
-      },
-    );
+        },
+      );
+    } catch (cause) {
+      controller.abort();
+      await finalizeStartupFailure(sdk, ref, running, cause);
+      throw cause;
+    }
 
     scanPromise
       .then(
@@ -174,6 +192,10 @@ export async function startEngineSession(
 
     return ok(started);
   } catch (cause) {
+    if (cause instanceof EngineError) {
+      return error(cause.message, "VALIDATION");
+    }
+
     sdk.console.error(cause);
     return error(getErrorMessage(cause));
   }
@@ -190,7 +212,9 @@ export async function cancelEngineSession(
       ? ok(undefined)
       : error("Session is no longer running.", "NOT_FOUND");
   }
+
   if (!beginFinalization(session)) return ok(undefined);
+
   session.controller.abort();
   await finalizeRunningSession(
     sdk,
@@ -200,6 +224,7 @@ export async function cancelEngineSession(
     session.phase,
     session.eventError,
   );
+
   return session.eventError
     ? error(session.eventError.message, "IO")
     : ok(undefined);
@@ -220,8 +245,10 @@ export async function pauseEngineSession(
   ) {
     return error(`Cannot pause a ${session.state} session.`, "CONFLICT");
   }
+
   session.runControl.pause();
   session.stateBeforePause = session.state;
+
   try {
     await drainEvents(session);
     if (session.finalizing) return ok(undefined);
@@ -250,14 +277,31 @@ export async function resumeEngineSession(
   if (session.state !== EngineState.Paused) {
     return error(`Cannot resume a ${session.state} session.`, "CONFLICT");
   }
+
   const resumedState =
     session.stateBeforePause ?? getActiveStateForPhase(session.phase);
+
   await drainEvents(session);
   if (session.finalizing) return ok(undefined);
   if (session.eventError) return error(session.eventError.message, "IO");
   await persistState(sdk, ref, resumedState, session.phase, session);
   session.runControl.resume();
   return ok(undefined);
+}
+
+export async function pauseSessionsOutsideProject(
+  sdk: BackendSDK,
+  projectId: string | undefined,
+): Promise<ApiResult<void>> {
+  const sessions = [...runningSessions.values()].filter(
+    (session) =>
+      session.ref.projectId !== projectId &&
+      session.state !== EngineState.Paused,
+  );
+  const results = await Promise.all(
+    sessions.map((session) => pauseEngineSession(sdk, session.ref)),
+  );
+  return results.find((result) => !result.success) ?? ok(undefined);
 }
 
 export function tombstoneRunningSessions(refs: SessionRef[]): void {
@@ -274,6 +318,7 @@ async function loadWords(config: ParamMinerConfig): Promise<string[]> {
   const words = await Promise.all(
     paths.map((wordlistPath) => readWordlist(wordlistPath)),
   );
+
   return [...new Set(words.flat())];
 }
 
@@ -286,6 +331,7 @@ async function persistDiscoveryEvent(
 ): Promise<void> {
   if (!isCurrentSession(ref, running) || terminalStates.has(running.state))
     return;
+
   switch (event.type) {
     case "state":
     case "completed":
@@ -346,8 +392,10 @@ async function queueEntry(
 ): Promise<void> {
   if (!isCurrentSession(ref, running) || terminalStates.has(running.state))
     return;
+
   const persisted = await getSessionStore().appendEntries(ref, [entry]);
   if (persisted === undefined || !isCurrentSession(ref, running)) return;
+
   emitSessionChanges(sdk, ref.projectId, persisted.revision, [
     {
       type: "entries",
@@ -368,6 +416,7 @@ async function persistState(
   if (!isCurrentSession(ref, running) || terminalStates.has(running.state))
     return;
   if (running.state === state && running.phase === phase) return;
+
   const updated = await getSessionStore().updateSession(ref, { state, phase });
   if (updated && isCurrentSession(ref, running)) {
     running.state = state;
@@ -378,6 +427,7 @@ async function persistState(
     ]);
     return updated.session;
   }
+
   return undefined;
 }
 
@@ -390,6 +440,7 @@ async function persistTerminal(
   terminalError?: ApiError,
 ): Promise<void> {
   if (!isCurrentSession(ref, running) || !running.finalizing) return;
+
   const updated = await getSessionStore().updateSession(ref, {
     state,
     phase,
@@ -399,13 +450,19 @@ async function persistTerminal(
     running.state = state;
     running.phase = phase;
     running.controller.abort();
-    emitSessionChanges(sdk, ref.projectId, updated.revision, [
-      {
-        type: "terminal",
-        session: updated.session,
-        error: terminalError,
-      },
-    ]);
+    try {
+      emitSessionChanges(sdk, ref.projectId, updated.revision, [
+        {
+          type: "terminal",
+          session: updated.session,
+          error: terminalError,
+        },
+      ]);
+    } catch (cause) {
+      sdk.console.error(
+        `[SESSIONS] Could not publish terminal state for ${ref.sessionId}: ${getErrorMessage(cause)}`,
+      );
+    }
   }
 }
 
@@ -420,21 +477,68 @@ async function finalizeRunningSession(
   try {
     await drainEvents(running);
     const finalError = running.eventError ?? terminalError;
-    await persistTerminal(
+    await persistTerminalWithRetry(
       sdk,
       ref,
+      running,
       running.eventError ? EngineState.Error : state,
       phase,
-      running,
       finalError,
     );
-  } finally {
     deleteRunningSession(ref, running);
+  } catch (cause) {
+    running.finalizing = false;
+    throw cause;
+  }
+}
+
+async function persistTerminalWithRetry(
+  sdk: BackendSDK,
+  ref: SessionRef,
+  running: RunningSession,
+  state: EngineState,
+  phase: EnginePhase,
+  terminalError?: ApiError,
+): Promise<void> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < TERMINAL_PERSIST_ATTEMPTS; attempt += 1) {
+    try {
+      await persistTerminal(sdk, ref, state, phase, running, terminalError);
+      return;
+    } catch (cause) {
+      lastError = cause;
+    }
+  }
+
+  throw lastError;
+}
+
+async function finalizeStartupFailure(
+  sdk: BackendSDK,
+  ref: SessionRef,
+  running: RunningSession,
+  cause: unknown,
+): Promise<void> {
+  if (!beginFinalization(running)) return;
+  try {
+    await finalizeRunningSession(
+      sdk,
+      ref,
+      running,
+      EngineState.Error,
+      running.phase,
+      { code: "INTERNAL", message: getErrorMessage(cause) },
+    );
+  } catch (finalizeCause) {
+    sdk.console.error(
+      `[SESSIONS] Could not finalize failed startup ${ref.sessionId}: ${getErrorMessage(finalizeCause)}`,
+    );
   }
 }
 
 function beginFinalization(running: RunningSession): boolean {
   if (running.finalizing || terminalStates.has(running.state)) return false;
+
   running.finalizing = true;
   running.acceptingEvents = false;
   return true;
@@ -479,6 +583,7 @@ function rollbackPause(session: RunningSession): void {
   ) {
     session.runControl.resume();
   }
+
   session.stateBeforePause = undefined;
 }
 

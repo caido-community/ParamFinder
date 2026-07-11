@@ -108,6 +108,10 @@ function parseRunOptions(runOptions?: unknown): RunOptions | undefined {
   );
 }
 
+export function createRunOptions(overrides: RunOptions = {}): RunOptions {
+  return parseRunOptions(overrides) ?? {};
+}
+
 export function parseRunInput(input: unknown): EngineRunInput {
   const parsedInput = parseWithSchema(
     runInputSchema,

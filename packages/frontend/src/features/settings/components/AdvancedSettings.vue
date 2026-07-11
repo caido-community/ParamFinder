@@ -1,9 +1,9 @@
 <script setup lang="ts">
+import { storeToRefs } from "pinia";
 import InputNumber from "primevue/inputnumber";
 import MultiSelect from "primevue/multiselect";
 import ToggleSwitch from "primevue/toggleswitch";
 import { AnomalyType, type Settings } from "shared";
-import { computed } from "vue";
 
 import { useSettingsActions } from "../composables/useSettingsActions";
 
@@ -11,11 +11,14 @@ import { useSettingsStore } from "@/features/settings/stores/store";
 
 const settingsStore = useSettingsStore();
 const { updateSettings } = useSettingsActions();
+const { data, saving } = storeToRefs(settingsStore);
 
-const data = computed(() => settingsStore.data);
+type BooleanSettingKey = {
+  [K in keyof Settings]-?: Settings[K] extends boolean ? K : never;
+}[keyof Settings];
 
 const toggles: {
-  field: keyof Settings;
+  field: BooleanSettingKey;
   label: string;
   description: string;
 }[] = [
@@ -67,11 +70,9 @@ const anomalyOptions = Object.values(AnomalyType).map((type) => ({
   value: type,
 }));
 
-const getBool = (field: keyof Settings): boolean => {
-  return data.value?.[field] === true;
-};
+const getBool = (field: BooleanSettingKey) => data.value?.[field] === true;
 
-const setBool = (field: keyof Settings, value: boolean) => {
+const setBool = (field: BooleanSettingKey, value: boolean) => {
   void updateSettings({ [field]: value });
 };
 
@@ -123,6 +124,7 @@ const numberPt = {
         </div>
         <ToggleSwitch
           :model-value="data.autoDetectMaxSize"
+          :disabled="saving"
           @update:model-value="onAutoDetectMaxSize"
         />
       </div>
@@ -138,6 +140,7 @@ const numberPt = {
           <InputNumber
             :model-value="data.maxQuerySize ?? 0"
             :min="0"
+            :disabled="saving"
             :pt="numberPt"
             @update:model-value="
               (value) => setMaxSize('maxQuerySize', value ?? undefined)
@@ -151,6 +154,7 @@ const numberPt = {
           <InputNumber
             :model-value="data.maxHeaderSize ?? 0"
             :min="0"
+            :disabled="saving"
             :pt="numberPt"
             @update:model-value="
               (value) => setMaxSize('maxHeaderSize', value ?? undefined)
@@ -164,6 +168,7 @@ const numberPt = {
           <InputNumber
             :model-value="data.maxBodySize ?? 0"
             :min="0"
+            :disabled="saving"
             :pt="numberPt"
             @update:model-value="
               (value) => setMaxSize('maxBodySize', value ?? undefined)
@@ -183,6 +188,7 @@ const numberPt = {
         </div>
         <ToggleSwitch
           :model-value="getBool(toggle.field)"
+          :disabled="saving"
           @update:model-value="(value) => setBool(toggle.field, value)"
         />
       </div>
@@ -205,6 +211,7 @@ const numberPt = {
         filter
         class="w-full"
         placeholder="Select anomaly types to ignore"
+        :disabled="saving"
         @update:model-value="setIgnoreAnomalyTypes"
       />
     </div>

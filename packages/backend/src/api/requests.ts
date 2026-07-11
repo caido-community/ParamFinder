@@ -3,25 +3,29 @@ import {
   createHeaderMap,
 } from "@paramfinder/engine";
 import type { Request as CaidoRequest } from "caido:utils";
-import { type ApiResult, error, ok, type Request } from "shared";
+import {
+  type ApiResult,
+  error,
+  ok,
+  type Request,
+  requestIdSchema,
+} from "shared";
 
 import { type BackendSDK } from "../types/types";
-import { getErrorMessage } from "../util/errors";
 
 export async function getRequest(
   sdk: BackendSDK,
   id: string,
 ): Promise<ApiResult<Request>> {
-  try {
-    const requestResponse = await sdk.requests.get(id);
-    if (!requestResponse) {
-      return error("Request not found", "NOT_FOUND");
-    }
+  const input = requestIdSchema.safeParse(id);
+  if (!input.success) return error("Invalid request ID.", "VALIDATION");
 
-    return ok(toRequest(requestResponse.request));
-  } catch (err) {
-    return error(getErrorMessage(err));
+  const requestResponse = await sdk.requests.get(input.data);
+  if (!requestResponse) {
+    return error("Request not found", "NOT_FOUND");
   }
+
+  return ok(toRequest(requestResponse.request));
 }
 
 function toRequest(request: CaidoRequest): Request {

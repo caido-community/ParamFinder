@@ -1,5 +1,6 @@
 import { createPinia, setActivePinia } from "pinia";
 import {
+  error,
   MiningSessionPhase,
   MiningSessionState,
   ok,
@@ -110,6 +111,53 @@ describe("sessions store reliability", () => {
     expect(store.list.map((session) => session.ref.sessionId)).toEqual([
       "buffered",
     ]);
+  });
+
+  it("does not let stale project discovery overwrite a project change", async () => {
+    const currentProject =
+      deferred<ReturnType<typeof ok<string | undefined>>>();
+    sdkHolder.current = createSDK({
+      getCurrentProjectId: vi.fn(() => currentProject.promise),
+      listSessions: vi.fn(async (projectId: string) =>
+        ok(
+          snapshot(projectId, 1, [
+            descriptor(projectId, `${projectId}-session`),
+          ]),
+        ),
+      ),
+    });
+    const store = useSessionsStore();
+
+    const initializing = store.initialize();
+    await store.reloadForProject("b");
+    currentProject.resolve(ok("a"));
+    await initializing;
+
+    expect(store.currentProjectId).toBe("b");
+    expect(store.list.map((session) => session.ref.sessionId)).toEqual([
+      "b-session",
+    ]);
+  });
+
+  it("retries a failed hydration when session events are buffered", async () => {
+    const buffered = descriptor("a", "buffered-after-failure");
+    const listSessions = vi
+      .fn()
+      .mockResolvedValueOnce(error("temporary snapshot failure"))
+      .mockResolvedValueOnce(ok(snapshot("a", 1, [])));
+    sdkHolder.current = createSDK({ listSessions });
+    const store = useSessionsStore();
+    store.acceptEnvelope(upsertEnvelope("a", 2, buffered));
+
+    const result = await store.initialize();
+
+    expect(result).toEqual(error("temporary snapshot failure"));
+    await vi.waitFor(() => expect(listSessions).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() =>
+      expect(store.list.map((session) => session.ref.sessionId)).toEqual([
+        "buffered-after-failure",
+      ]),
+    );
   });
 
   it("keeps numeric session IDs newest-first when timestamps match", async () => {
@@ -498,6 +546,70 @@ describe("sessions store reliability", () => {
     await loading;
 
     expect(store.getRequestDetailState("request-1")).toBeUndefined();
+  });
+
+  it("clears stale request-detail loading during same-project hydration", async () => {
+    const response = deferred<ReturnType<typeof ok<RequestResponse>>>();
+    const session = descriptor("a", "session");
+    sdkHolder.current = createSDK({
+      listSessions: vi.fn(async () => ok(snapshot("a", 1, [session]))),
+    });
+    requestLoader.load.mockReturnValue(response.promise);
+    const store = useSessionsStore();
+    await store.initialize();
+    store.setSelectedRequest("request-1");
+    const loading = store.loadRequestDetails("request-1");
+
+    await store.reloadForProject("a");
+    expect(store.getRequestDetailState("request-1")).toBeUndefined();
+
+    response.resolve(
+      ok({
+        request: {
+          id: "request-1",
+          host: "example.com",
+          port: 443,
+          url: "https://example.com/",
+          path: "/",
+          query: "",
+          method: "GET",
+          headers: {},
+          body: "",
+          tls: true,
+          raw: "GET / HTTP/1.1\r\n\r\n",
+          context: "discovery",
+        },
+        response: {
+          requestId: "request-1",
+          status: 200,
+          headers: {},
+          time: 1,
+        },
+      }),
+    );
+    await loading;
+
+    expect(store.getRequestDetailState("request-1")).toBeUndefined();
+  });
+
+  it("clears action loading during same-project hydration", async () => {
+    const paused = deferred<ReturnType<typeof ok<void>>>();
+    const session = descriptor("a", "session");
+    sdkHolder.current = createSDK({
+      listSessions: vi.fn(async () => ok(snapshot("a", 1, [session]))),
+      pauseSession: vi.fn(() => paused.promise),
+    });
+    const store = useSessionsStore();
+    await store.initialize();
+
+    const pausing = store.pauseActive();
+    expect(store.activeActionLoading).toBe("pause");
+    await store.reloadForProject("a");
+    expect(store.activeActionLoading).toBeUndefined();
+
+    paused.resolve(ok(undefined));
+    await pausing;
+    expect(store.activeActionLoading).toBeUndefined();
   });
 
   it("exports every cursor page beyond 1,000 entries", async () => {

@@ -127,7 +127,7 @@ export function createCompletedRunResult(args: {
 }
 
 export function createCanceledRunResult(args: {
-  phase: EnginePhase.Learning | EnginePhase.Discovery;
+  phase: typeof EnginePhase.Learning | typeof EnginePhase.Discovery;
   profile?: BaselineProfile;
   totalParametersAmount: number;
   findings?: Finding[];
@@ -142,7 +142,7 @@ export function createCanceledRunResult(args: {
 }
 
 export function createTimeoutRunResult(args: {
-  phase: EnginePhase.Learning | EnginePhase.Discovery;
+  phase: typeof EnginePhase.Learning | typeof EnginePhase.Discovery;
   profile?: BaselineProfile;
   totalParametersAmount: number;
   findings?: Finding[];
@@ -157,7 +157,7 @@ export function createTimeoutRunResult(args: {
 }
 
 export function createErrorRunResult(args: {
-  phase: EnginePhase.Learning | EnginePhase.Discovery;
+  phase: typeof EnginePhase.Learning | typeof EnginePhase.Discovery;
   profile?: BaselineProfile;
   totalParametersAmount: number;
   failureReason: string;

@@ -15,12 +15,6 @@ export async function readWordlist(filePath: string): Promise<string[]> {
   return [...new Set(words)];
 }
 
-export function generateID(): string {
-  const timestamp = Date.now().toString(36);
-  const random = Math.random().toString(36).substring(2, 7);
-  return timestamp.padStart(8, "0") + random;
-}
-
 export async function writeToFile(
   sdk: SDK,
   data: string,
@@ -56,6 +50,7 @@ export async function writeToFile(
   }
 
   await writeFile(filePath, data);
+
   return filePath;
 }
 

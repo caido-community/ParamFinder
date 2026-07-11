@@ -3,21 +3,69 @@ import { z } from "zod";
 import { parseJsonBodyPath } from "../json-body-path";
 import { RunControl } from "../run-control";
 import {
+  type Anomaly,
   AnomalyType,
   ATTACK_TYPES,
   type BaselineProfile,
   type EngineConfig,
   type EngineRequest,
+  type EngineRequestResponse,
   type EngineResponse,
   INSPECTABLE_BODY_KINDS,
+  type Parameter,
   PARAMETER_VALUE_TYPES,
   REQUEST_CONTEXTS,
   type RunOptions,
   type StableFactors,
 } from "../types";
 
-const headersSchema = z.record(z.string(), z.array(z.string()));
-const anomalyTypeSchema = z.enum(AnomalyType);
+export const headersSchema = z.record(z.string(), z.array(z.string()));
+export const anomalyTypeSchema = z.enum(AnomalyType);
+export const parameterSchema: z.ZodType<Parameter> = z.object({
+  name: z.string(),
+  value: z.string(),
+});
+export const anomalySchema: z.ZodType<Anomaly> = z.union([
+  z.object({
+    type: z.literal(AnomalyType.StatusCode),
+    from: z.number(),
+    to: z.number(),
+  }),
+  z.object({
+    type: z.literal(AnomalyType.Redirect),
+    from: z.string().optional(),
+    to: z.string().optional(),
+  }),
+  z.object({
+    type: z.literal(AnomalyType.Headers),
+    headerName: z.string(),
+    from: z.array(z.string()).optional(),
+    to: z.array(z.string()).optional(),
+  }),
+  z.object({
+    type: z.literal(AnomalyType.ReflectionCount),
+    parameterName: z.string(),
+    from: z.number(),
+    to: z.number(),
+  }),
+  z.object({
+    type: z.literal(AnomalyType.Body),
+    check: z.literal("length"),
+    from: z.number(),
+    to: z.number(),
+  }),
+  z.object({
+    type: z.literal(AnomalyType.Body),
+    check: z.literal("content"),
+    expectedDiffCount: z.number(),
+    actualDiffCount: z.number(),
+  }),
+  z.object({
+    type: z.literal(AnomalyType.Similarity),
+    similarity: z.number(),
+    threshold: z.number(),
+  }),
+]);
 
 export const engineRequestSchema: z.ZodType<EngineRequest> = z.object({
   id: z.string().min(1),
@@ -34,7 +82,7 @@ export const engineRequestSchema: z.ZodType<EngineRequest> = z.object({
   context: z.enum(REQUEST_CONTEXTS),
 });
 
-const engineResponseSchema: z.ZodType<EngineResponse> = z.object({
+export const engineResponseSchema: z.ZodType<EngineResponse> = z.object({
   requestId: z.string().min(1),
   status: z.number().int().nonnegative(),
   headers: headersSchema,
@@ -43,8 +91,10 @@ const engineResponseSchema: z.ZodType<EngineResponse> = z.object({
   length: z.number().int().nonnegative().optional(),
   raw: z.string().min(1).optional(),
 });
+export const engineRequestResponseSchema: z.ZodType<EngineRequestResponse> =
+  z.object({ request: engineRequestSchema, response: engineResponseSchema });
 
-const stableFactorsSchema: z.ZodType<StableFactors> = z.object({
+export const stableFactorsSchema: z.ZodType<StableFactors> = z.object({
   bodyStable: z.boolean(),
   bodyLength: z.number().int().nonnegative(),
   bodyLengthStable: z.boolean(),
@@ -60,7 +110,7 @@ const stableFactorsSchema: z.ZodType<StableFactors> = z.object({
   redirect: z.string().min(1).optional(),
 });
 
-const additionalChecksResultSchema = z.object({
+export const additionalChecksResultSchema = z.object({
   handlesSpecialCharacters: z.boolean(),
   handlesEncodedSpecialCharacters: z.boolean(),
 });

@@ -1,105 +1,64 @@
-import { readFile, rename, writeFile } from "fs/promises";
-import path from "path";
-
 import {
   compareSessionIds,
   type CursorPage,
-  enginePhaseSchema,
-  engineStateSchema,
   type ProjectSessionSnapshot,
-  sentRequestSchema,
   type SessionDescriptor,
   sessionDescriptorSchema,
   type SessionEntriesQuery,
   type SessionEntry,
   type SessionEntryInput,
-  type SessionEntryKind,
   sessionEntrySchema,
-  sessionFindingSchema,
+  type SessionEntrySortField,
   type SessionRef,
   type SessionRerun,
-  sessionRerunSchema,
 } from "shared";
-import { z } from "zod";
+import type { Database, Parameter } from "sqlite";
 
 import type { BackendSDK } from "../types/types";
-import { writeFileAtomically } from "../util/atomic-file";
-import { pathExists } from "../util/filesystem";
 import { SerialTaskQueue } from "../util/serial-task-queue";
 
 const DEFAULT_PAGE_SIZE = 250;
 const MAX_PAGE_SIZE = 1_000;
 const SNAPSHOT_VERSION = 2 as const;
-const SNAPSHOT_FILENAME = "sessions-v2.json";
-
-const legacySessionSchema = z.object({
-  id: z.string().optional(),
-  findings: z.array(sessionFindingSchema),
-  sentRequests: z.array(sentRequestSchema),
-  state: engineStateSchema,
-  phase: enginePhaseSchema,
-  totalParametersAmount: z.number().int().nonnegative(),
-  totalLearnRequests: z.number().int().nonnegative(),
-  parametersSent: z.number().int().nonnegative(),
-  requestsSent: z.number().int().nonnegative(),
-  logs: z.array(z.string()),
-  rerun: sessionRerunSchema.optional(),
-});
-type LegacySession = z.infer<typeof legacySessionSchema>;
-
-const storedSessionSchema = z.object({
-  descriptor: sessionDescriptorSchema,
-  entries: z.array(sessionEntrySchema),
-});
-const fileSnapshotSchema = z.object({
-  version: z.literal(SNAPSHOT_VERSION),
-  projects: z.array(
-    z.object({
-      projectId: z.string().min(1),
-      revision: z.number().int().nonnegative(),
-      sessions: z.array(storedSessionSchema),
-    }),
-  ),
+const RESTART_ERROR = JSON.stringify({
+  code: "INTERNAL",
+  message: "Scan interrupted because the ParamFinder backend restarted.",
 });
 
-type StoredSession = {
-  descriptor: SessionDescriptor;
-  entries: SessionEntry[];
-  nextSequence: number;
-};
-type ProjectState = {
-  revision: number;
-  sessions: Map<string, StoredSession>;
-};
-
-export type SessionFilePersistence = {
-  readFile: (filePath: string) => Promise<string>;
-  writeFile: (filePath: string, contents: string) => Promise<void>;
-  replaceFile: (from: string, to: string) => Promise<void>;
-  exists: (filePath: string) => Promise<boolean>;
-};
-
-const filePersistence: SessionFilePersistence = {
-  readFile: async (filePath) => String(await readFile(filePath)),
-  writeFile,
-  replaceFile: rename,
-  exists: pathExists,
+type SessionRow = {
+  project_id: string;
+  session_id: string;
+  state: string;
+  phase: string;
+  total_parameters_amount: number;
+  total_learn_requests: number;
+  parameters_sent: number;
+  requests_sent: number;
+  findings_count: number;
+  logs_count: number;
+  created_at: number;
+  updated_at: number;
+  error_json: string | null | undefined;
+  rerun_json: string | null | undefined;
 };
 
-/**
- * Sessions live in indexed memory and are checkpointed as one atomic JSON file.
- * Entry batches deliberately do not rewrite the growing snapshot. State changes
- * (including pause and terminal transitions) checkpoint all entries accumulated
- * since the previous state change.
- */
+type EntryRow = { sequence: number; kind: string; value_json: string };
+
+const SESSION_COLUMNS = `
+  project_id, session_id, state, phase, total_parameters_amount,
+  total_learn_requests, parameters_sent, requests_sent, findings_count,
+  logs_count, created_at, updated_at, error_json, rerun_json
+`;
+
+/** Persistent, project-scoped scan history backed by Caido's plugin database. */
 export class SessionStore {
-  private projects = new Map<string, ProjectState>();
-  private readonly operationQueue = new SerialTaskQueue();
+  private database: Database | undefined;
+  private readonly writeQueue = new SerialTaskQueue();
   readonly ready: Promise<void>;
 
   constructor(
     private readonly sdk: BackendSDK,
-    private readonly persistence: SessionFilePersistence = filePersistence,
+    private readonly databasePromise: Promise<Database> = sdk.meta.db(),
   ) {
     this.ready = this.initialize();
   }
@@ -110,22 +69,34 @@ export class SessionStore {
   }
 
   async listSessions(projectId: string): Promise<ProjectSessionSnapshot> {
-    return this.serialized(async () => {
-      const project = await this.ensureProject(projectId);
-      const sessions = [...project.sessions.values()]
-        .map(({ descriptor }) => copyDescriptor(descriptor))
-        .sort(
-          (left, right) =>
-            right.createdAt - left.createdAt ||
-            compareSessionIds(right.ref.sessionId, left.ref.sessionId),
-        );
-      return {
-        version: SNAPSHOT_VERSION,
-        projectId,
-        revision: project.revision,
-        sessions,
-      };
-    });
+    const database = await this.db();
+    const project = await (
+      await database.prepare(
+        "SELECT revision FROM paramfinder_session_projects WHERE project_id = ?",
+      )
+    ).get<{ revision: number }>(projectId);
+    const rows = await (
+      await database.prepare(
+        `SELECT ${SESSION_COLUMNS}
+         FROM paramfinder_sessions
+         WHERE project_id = ?
+         ORDER BY created_at DESC`,
+      )
+    ).all<SessionRow>(projectId);
+    const sessions = rows
+      .map(descriptorFromRow)
+      .sort(
+        (left, right) =>
+          right.createdAt - left.createdAt ||
+          compareSessionIds(right.ref.sessionId, left.ref.sessionId),
+      );
+
+    return {
+      version: SNAPSHOT_VERSION,
+      projectId,
+      revision: project?.revision ?? 0,
+      sessions,
+    };
   }
 
   async createSession(
@@ -134,16 +105,14 @@ export class SessionStore {
     totalLearnRequests: number,
     rerun: SessionRerun,
   ): Promise<{ revision: number; session: SessionDescriptor }> {
-    return this.serialized(async () => {
-      const project = await this.ensureProject(ref.projectId);
-      return this.createSessionInProject(
-        project,
+    return this.write(() =>
+      this.createSessionUnlocked(
         ref,
         totalParametersAmount,
         totalLearnRequests,
         rerun,
-      );
-    });
+      ),
+    );
   }
 
   async createNextSession(
@@ -152,15 +121,20 @@ export class SessionStore {
     totalLearnRequests: number,
     rerun: SessionRerun,
   ): Promise<{ revision: number; session: SessionDescriptor }> {
-    return this.serialized(async () => {
-      const project = await this.ensureProject(projectId);
-      const ref = {
-        projectId,
-        sessionId: nextNumericSessionId(project.sessions.keys()),
-      };
-      return this.createSessionInProject(
-        project,
-        ref,
+    return this.write(async () => {
+      const database = await this.db();
+      const rows = await (
+        await database.prepare(
+          "SELECT session_id FROM paramfinder_sessions WHERE project_id = ?",
+        )
+      ).all<{ session_id: string }>(projectId);
+      return this.createSessionUnlocked(
+        {
+          projectId,
+          sessionId: nextNumericSessionId(
+            rows.map(({ session_id }) => session_id),
+          ),
+        },
         totalParametersAmount,
         totalLearnRequests,
         rerun,
@@ -168,18 +142,18 @@ export class SessionStore {
     });
   }
 
-  private async createSessionInProject(
-    project: ProjectState,
+  private async createSessionUnlocked(
     ref: SessionRef,
     totalParametersAmount: number,
     totalLearnRequests: number,
     rerun: SessionRerun,
-  ): Promise<{ revision: number; session: SessionDescriptor }> {
-    if (project.sessions.has(ref.sessionId)) {
+  ) {
+    if ((await this.getSession(ref)) !== undefined) {
       throw new Error(`Session ${ref.sessionId} already exists.`);
     }
+
     const now = Date.now();
-    const descriptor = sessionDescriptorSchema.parse({
+    const descriptor: SessionDescriptor = {
       ref,
       state: "pending",
       phase: "idle",
@@ -191,24 +165,16 @@ export class SessionStore {
       logsCount: 0,
       createdAt: now,
       updatedAt: now,
-      rerun: sessionRerunSchema.parse(rerun),
-    });
-    project.sessions.set(ref.sessionId, {
-      descriptor,
-      entries: [],
-      nextSequence: 1,
-    });
-    project.revision += 1;
-    try {
-      await this.persist();
-    } catch (cause) {
-      project.sessions.delete(ref.sessionId);
-      project.revision -= 1;
-      throw cause;
-    }
+      rerun,
+    };
+    const database = this.dbWithoutReady();
+    await ensureProject(database, ref.projectId);
+    await insertSession(database, descriptor);
+    await incrementRevision(database, ref.projectId);
+
     return {
-      revision: project.revision,
-      session: copyDescriptor(descriptor),
+      revision: await this.getRevision(ref.projectId),
+      session: descriptor,
     };
   }
 
@@ -226,26 +192,19 @@ export class SessionStore {
       >
     >,
   ): Promise<{ revision: number; session: SessionDescriptor } | undefined> {
-    return this.serialized(async () => {
-      const project = await this.ensureProject(ref.projectId);
-      const stored = project.sessions.get(ref.sessionId);
-      if (stored === undefined) return undefined;
-      const previous = stored.descriptor;
-      const next = sessionDescriptorSchema.parse({
+    return this.write(async () => {
+      const previous = await this.getSession(ref);
+      if (previous === undefined) return undefined;
+
+      const session: SessionDescriptor = {
         ...previous,
         ...changes,
         updatedAt: Date.now(),
-      });
-      stored.descriptor = next;
-      project.revision += 1;
-      try {
-        await this.persist();
-      } catch (cause) {
-        stored.descriptor = previous;
-        project.revision -= 1;
-        throw cause;
-      }
-      return { revision: project.revision, session: copyDescriptor(next) };
+      };
+      const database = this.dbWithoutReady();
+      await updateSessionRow(database, session);
+      await incrementRevision(database, ref.projectId);
+      return { revision: await this.getRevision(ref.projectId), session };
     });
   }
 
@@ -260,15 +219,22 @@ export class SessionStore {
     | undefined
   > {
     if (values.length === 0) return undefined;
-    return this.serialized(async () => {
-      const project = await this.ensureProject(ref.projectId);
-      const stored = project.sessions.get(ref.sessionId);
-      if (stored === undefined) return undefined;
 
-      let sequence = stored.nextSequence;
-      const entries = values.map((value) =>
-        sessionEntrySchema.parse({ ...value, sequence: sequence++ }),
-      );
+    return this.write(async () => {
+      const previous = await this.getSession(ref);
+      if (previous === undefined) return undefined;
+      const maximum = await (
+        await (
+          await this.db()
+        ).prepare(
+          `SELECT COALESCE(MAX(sequence), 0) AS maximum
+           FROM paramfinder_session_entries
+           WHERE project_id = ? AND session_id = ?`,
+        )
+      ).get<{ maximum: number }>(ref.projectId, ref.sessionId);
+      let sequence = (maximum?.maximum ?? 0) + 1;
+      const entries = values.map((value) => sequenceEntry(value, sequence++));
+
       let requests = 0;
       let parameters = 0;
       let findings = 0;
@@ -277,297 +243,290 @@ export class SessionStore {
         if (entry.kind === "request") {
           requests += 1;
           parameters += entry.value.parametersSent;
-        } else if (entry.kind === "finding") findings += 1;
-        else logs += 1;
+        } else if (entry.kind === "finding") {
+          findings += 1;
+        } else {
+          logs += 1;
+        }
       }
-      stored.entries.push(...entries);
-      stored.nextSequence = sequence;
-      stored.descriptor = sessionDescriptorSchema.parse({
-        ...stored.descriptor,
+
+      const session: SessionDescriptor = {
+        ...previous,
         totalParametersAmount:
           counterChanges.totalParametersAmount ??
-          stored.descriptor.totalParametersAmount,
-        parametersSent: stored.descriptor.parametersSent + parameters,
-        requestsSent: stored.descriptor.requestsSent + requests,
-        findingsCount: stored.descriptor.findingsCount + findings,
-        logsCount: stored.descriptor.logsCount + logs,
+          previous.totalParametersAmount,
+        parametersSent: previous.parametersSent + parameters,
+        requestsSent: previous.requestsSent + requests,
+        findingsCount: previous.findingsCount + findings,
+        logsCount: previous.logsCount + logs,
         updatedAt: Date.now(),
-      });
-      project.revision += 1;
+      };
+      const database = this.dbWithoutReady();
+      await insertEntries(database, ref, entries);
+      await updateSessionRow(database, session);
+      await incrementRevision(database, ref.projectId);
+
       return {
-        revision: project.revision,
-        session: copyDescriptor(stored.descriptor),
-        entries: entries.map(copyEntry),
+        revision: await this.getRevision(ref.projectId),
+        session,
+        entries,
       };
     });
   }
 
   async getSession(ref: SessionRef): Promise<SessionDescriptor | undefined> {
-    return this.serialized(async () => {
-      const stored = (await this.ensureProject(ref.projectId)).sessions.get(
-        ref.sessionId,
-      );
-      return stored === undefined
-        ? undefined
-        : copyDescriptor(stored.descriptor);
-    });
+    const row = await (
+      await (
+        await this.db()
+      ).prepare(
+        `SELECT ${SESSION_COLUMNS}
+         FROM paramfinder_sessions
+         WHERE project_id = ? AND session_id = ?`,
+      )
+    ).get<SessionRow>(ref.projectId, ref.sessionId);
+    return row === undefined ? undefined : descriptorFromRow(row);
   }
 
   async getEntries(
     query: SessionEntriesQuery,
   ): Promise<CursorPage<SessionEntry> | undefined> {
-    return this.serialized(async () => {
-      const stored = (
-        await this.ensureProject(query.ref.projectId)
-      ).sessions.get(query.ref.sessionId);
-      if (stored === undefined) return undefined;
-      const cursor = parseCursor(query.cursor);
-      const currentMax = maximumSequence(stored.entries, query.kind);
-      const snapshotMaxSequence = cursor?.snapshotMaxSequence ?? currentMax;
-      const offset = cursor?.offset ?? 0;
-      const filter = query.filter?.trim().toLowerCase();
-      const matching = stored.entries.filter(
-        (entry) =>
-          entry.kind === query.kind &&
-          entry.sequence <= snapshotMaxSequence &&
-          (!filter ||
-            JSON.stringify(entry.value).toLowerCase().includes(filter)),
-      );
-      const sort = query.sort ?? {
-        field: "sequence",
-        direction: "asc" as const,
-      };
-      matching.sort((left, right) => compareEntries(left, right, sort));
-      const limit = Math.min(
-        MAX_PAGE_SIZE,
-        Math.max(1, query.limit ?? DEFAULT_PAGE_SIZE),
-      );
-      const items = matching.slice(offset, offset + limit).map(copyEntry);
-      const nextOffset = offset + items.length;
-      return {
-        items,
-        total: matching.length,
-        snapshotMaxSequence,
-        nextCursor:
-          nextOffset < matching.length
-            ? formatCursor({ snapshotMaxSequence, offset: nextOffset })
-            : undefined,
-      };
-    });
+    if ((await this.getSession(query.ref)) === undefined) return undefined;
+
+    const database = await this.db();
+    const cursor = parseCursor(query.cursor, querySignature(query));
+    const currentMaximum = await (
+      await database.prepare(
+        `SELECT COALESCE(MAX(sequence), 0) AS maximum
+         FROM paramfinder_session_entries
+         WHERE project_id = ? AND session_id = ? AND kind = ?`,
+      )
+    ).get<{ maximum: number }>(
+      query.ref.projectId,
+      query.ref.sessionId,
+      query.kind,
+    );
+    const snapshotMaxSequence =
+      cursor?.snapshotMaxSequence ?? currentMaximum?.maximum ?? 0;
+    const offset = cursor?.offset ?? 0;
+    const filter = query.filter?.trim().toLowerCase();
+    const filterSql =
+      filter === undefined || filter.length === 0
+        ? ""
+        : " AND instr(search_text, ?) > 0";
+    const params: Parameter[] = [
+      query.ref.projectId,
+      query.ref.sessionId,
+      query.kind,
+      snapshotMaxSequence,
+    ];
+    if (filterSql !== "") params.push(filter!);
+    const where = `project_id = ? AND session_id = ? AND kind = ? AND sequence <= ?${filterSql}`;
+    const total = await (
+      await database.prepare(
+        `SELECT COUNT(*) AS total FROM paramfinder_session_entries WHERE ${where}`,
+      )
+    ).get<{ total: number }>(...params);
+    const sort = query.sort ?? { field: "sequence", direction: "asc" };
+    const direction = sort.direction === "desc" ? "DESC" : "ASC";
+    const limit = Math.min(
+      MAX_PAGE_SIZE,
+      Math.max(1, query.limit ?? DEFAULT_PAGE_SIZE),
+    );
+    const rows = await (
+      await database.prepare(
+        `SELECT sequence, kind, value_json
+         FROM paramfinder_session_entries
+         WHERE ${where}
+         ORDER BY ${sortColumn(sort.field)} ${direction}, sequence ${direction}
+         LIMIT ? OFFSET ?`,
+      )
+    ).all<EntryRow>(...params, limit, offset);
+    const items = rows.map(entryFromRow);
+    const nextOffset = offset + items.length;
+    const totalCount = total?.total ?? 0;
+
+    return {
+      items,
+      total: totalCount,
+      snapshotMaxSequence,
+      nextCursor:
+        nextOffset < totalCount
+          ? formatCursor(
+              { snapshotMaxSequence, offset: nextOffset },
+              querySignature(query),
+            )
+          : undefined,
+    };
   }
 
   async deleteSessions(refs: SessionRef[]): Promise<Map<string, number>> {
-    return this.serialized(async () => {
-      const affected = new Map<
-        string,
-        {
-          project: ProjectState;
-          revision: number;
-          sessions: Map<string, StoredSession>;
-        }
-      >();
+    return this.write(async () => {
+      const database = await this.db();
+      const affected = new Set<string>();
+      const deletions: SessionRef[] = [];
+      const exists = await database.prepare(
+        `SELECT 1 AS present FROM paramfinder_sessions
+         WHERE project_id = ? AND session_id = ?`,
+      );
       for (const ref of refs) {
-        const project = await this.ensureProject(ref.projectId);
-        const stored = project.sessions.get(ref.sessionId);
-        if (stored === undefined) continue;
-        let rollback = affected.get(ref.projectId);
-        if (rollback === undefined) {
-          rollback = {
-            project,
-            revision: project.revision,
-            sessions: new Map(project.sessions),
-          };
-          affected.set(ref.projectId, rollback);
+        if (
+          (await exists.get<{ present: number }>(
+            ref.projectId,
+            ref.sessionId,
+          )) === undefined
+        ) {
+          continue;
         }
-        project.sessions.delete(ref.sessionId);
+        affected.add(ref.projectId);
+        deletions.push(ref);
       }
-      if (affected.size === 0) return new Map();
-      for (const { project } of affected.values()) project.revision += 1;
-      try {
-        await this.persist();
-      } catch (cause) {
-        for (const rollback of affected.values()) {
-          rollback.project.revision = rollback.revision;
-          rollback.project.sessions = rollback.sessions;
-        }
-        throw cause;
+      if (deletions.length === 0) return new Map();
+
+      const where = deletions
+        .map(() => "(project_id = ? AND session_id = ?)")
+        .join(" OR ");
+      const parameters = deletions.flatMap(({ projectId, sessionId }) => [
+        projectId,
+        sessionId,
+      ]);
+      await (
+        await database.prepare(
+          `DELETE FROM paramfinder_sessions WHERE ${where}`,
+        )
+      ).run(...parameters);
+      await (
+        await database.prepare(
+          `DELETE FROM paramfinder_session_entries WHERE ${where}`,
+        )
+      ).run(...parameters);
+      for (const projectId of affected) {
+        await incrementRevision(database, projectId);
       }
       return new Map(
-        [...affected].map(([projectId, { project }]) => [
-          projectId,
-          project.revision,
-        ]),
+        await Promise.all(
+          [...affected].map(
+            async (projectId) =>
+              [projectId, await this.getRevision(projectId)] as const,
+          ),
+        ),
       );
     });
   }
 
   private async initialize(): Promise<void> {
-    const snapshotPath = this.snapshotPath();
-    if (await this.persistence.exists(snapshotPath)) {
-      try {
-        this.projects = parseSnapshot(
-          JSON.parse(await this.persistence.readFile(snapshotPath)),
-        );
-      } catch (cause) {
-        this.sdk.console.error(
-          `[SESSIONS] Quarantining invalid session snapshot: ${String(cause)}`,
-        );
-        await this.persistence
-          .replaceFile(snapshotPath, `${snapshotPath}.quarantine-${Date.now()}`)
-          .catch(() => undefined);
-        this.projects = new Map();
-        await this.persist();
-      }
-    }
-
-    let changed = false;
-    for (const project of this.projects.values()) {
-      const interrupted = [...project.sessions.values()].filter(
-        ({ descriptor }) =>
-          ["pending", "learning", "running", "paused"].includes(
-            descriptor.state,
-          ),
+    const database = await this.databasePromise;
+    this.database = database;
+    await database.exec(`
+      CREATE TABLE IF NOT EXISTS paramfinder_session_projects (
+        project_id TEXT PRIMARY KEY,
+        revision INTEGER NOT NULL DEFAULT 0 CHECK (revision >= 0)
       );
-      if (interrupted.length === 0) continue;
-      const now = Date.now();
-      for (const stored of interrupted) {
-        stored.descriptor = sessionDescriptorSchema.parse({
-          ...stored.descriptor,
-          state: "error",
-          updatedAt: now,
-          error: {
-            code: "INTERNAL",
-            message:
-              "Scan interrupted because the ParamFinder backend restarted.",
-          },
-        });
-      }
-      project.revision += 1;
-      changed = true;
-    }
-    if (changed) await this.persist();
+      CREATE TABLE IF NOT EXISTS paramfinder_sessions (
+        project_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        state TEXT NOT NULL,
+        phase TEXT NOT NULL,
+        total_parameters_amount INTEGER NOT NULL,
+        total_learn_requests INTEGER NOT NULL,
+        parameters_sent INTEGER NOT NULL,
+        requests_sent INTEGER NOT NULL,
+        findings_count INTEGER NOT NULL,
+        logs_count INTEGER NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL,
+        error_json TEXT,
+        rerun_json TEXT NOT NULL,
+        PRIMARY KEY (project_id, session_id),
+        FOREIGN KEY (project_id) REFERENCES paramfinder_session_projects(project_id) ON DELETE CASCADE
+      );
+      CREATE TABLE IF NOT EXISTS paramfinder_session_entries (
+        project_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        sequence INTEGER NOT NULL CHECK (sequence > 0),
+        kind TEXT NOT NULL CHECK (kind IN ('request', 'finding', 'log')),
+        value_json TEXT NOT NULL,
+        search_text TEXT NOT NULL,
+        request_id TEXT,
+        response_status INTEGER,
+        response_length INTEGER,
+        response_time INTEGER,
+        parameters_sent INTEGER,
+        parameters_tested INTEGER,
+        context TEXT,
+        parameter TEXT,
+        anomaly TEXT,
+        PRIMARY KEY (project_id, session_id, sequence),
+        FOREIGN KEY (project_id, session_id)
+          REFERENCES paramfinder_sessions(project_id, session_id) ON DELETE CASCADE
+      );
+      CREATE INDEX IF NOT EXISTS paramfinder_sessions_by_project_created
+        ON paramfinder_sessions(project_id, created_at DESC);
+      CREATE INDEX IF NOT EXISTS paramfinder_entries_by_session_kind_sequence
+        ON paramfinder_session_entries(project_id, session_id, kind, sequence);
+    `);
+    await this.reconcileInterruptedSessions();
   }
 
-  private async ensureProject(projectId: string): Promise<ProjectState> {
-    let project = this.projects.get(projectId);
-    if (project !== undefined) return project;
-    project = { revision: 0, sessions: new Map() };
-    this.projects.set(projectId, project);
-    try {
-      await this.importLegacy(projectId, project);
-    } catch (cause) {
-      this.projects.delete(projectId);
-      throw cause;
-    }
-    return project;
-  }
-
-  private async importLegacy(
-    projectId: string,
-    project: ProjectState,
-  ): Promise<void> {
-    const primaryPath = path.join(
-      this.sdk.meta.path(),
-      `sessions-${safeFilename(projectId)}.json`,
-    );
-    const migratedPath = `${primaryPath}.migrated`;
-    const legacyPath = (await this.persistence.exists(primaryPath))
-      ? primaryPath
-      : (await this.persistence.exists(migratedPath))
-        ? migratedPath
-        : undefined;
-    if (legacyPath === undefined) return;
-    let root: { version?: unknown; sessions?: unknown };
-    try {
-      root = JSON.parse(
-        await this.persistence.readFile(legacyPath),
-      ) as typeof root;
-      if (
-        root.version !== 1 ||
-        typeof root.sessions !== "object" ||
-        root.sessions === null
-      ) {
-        throw new Error("unsupported snapshot version");
-      }
-    } catch (cause) {
-      this.sdk.console.error(
-        `[SESSIONS] Quarantining invalid legacy snapshot for ${projectId}: ${String(cause)}`,
-      );
-      await this.persistence
-        .replaceFile(legacyPath, `${legacyPath}.quarantine-${Date.now()}`)
-        .catch(() => undefined);
-      return;
-    }
+  private async reconcileInterruptedSessions(): Promise<void> {
+    const database = this.dbWithoutReady();
+    const projects = await (
+      await database.prepare(
+        `SELECT DISTINCT project_id FROM paramfinder_sessions
+         WHERE state IN ('pending', 'learning', 'running', 'paused')`,
+      )
+    ).all<{ project_id: string }>();
+    if (projects.length === 0) return;
 
     const now = Date.now();
-    for (const [sessionId, value] of Object.entries(
-      root.sessions as Record<string, unknown>,
-    )) {
-      const parsed = legacySessionSchema.safeParse(value);
-      if (!parsed.success) {
-        this.sdk.console.error(
-          `[SESSIONS] Skipped invalid legacy session ${sessionId}: ${parsed.error.message}`,
-        );
-        continue;
-      }
-      project.sessions.set(
-        sessionId,
-        createStoredLegacySession(projectId, sessionId, parsed.data, now),
-      );
-    }
-    try {
-      await this.persist();
-    } catch (cause) {
-      project.sessions.clear();
-      throw cause;
-    }
-    if (legacyPath === primaryPath) {
-      await this.persistence
-        .replaceFile(legacyPath, migratedPath)
-        .catch((cause) => {
-          this.sdk.console.error(
-            `[SESSIONS] Imported legacy snapshot but could not archive it: ${String(cause)}`,
-          );
-        });
+    await (
+      await database.prepare(
+        `UPDATE paramfinder_sessions
+         SET state = 'error', updated_at = ?, error_json = ?
+         WHERE state IN ('pending', 'learning', 'running', 'paused')`,
+      )
+    ).run(now, RESTART_ERROR);
+    for (const { project_id } of projects) {
+      await incrementRevision(database, project_id);
     }
   }
 
-  private snapshotPath(): string {
-    return path.join(this.sdk.meta.path(), SNAPSHOT_FILENAME);
+  private async getRevision(projectId: string): Promise<number> {
+    const row = await (
+      await (
+        await this.db()
+      ).prepare(
+        "SELECT revision FROM paramfinder_session_projects WHERE project_id = ?",
+      )
+    ).get<{ revision: number }>(projectId);
+    return row?.revision ?? 0;
   }
 
-  private async persist(): Promise<void> {
-    const snapshotPath = this.snapshotPath();
-    await writeFileAtomically(
-      snapshotPath,
-      JSON.stringify(toSnapshot(this.projects)),
-      this.persistence,
-    );
-  }
-
-  private serialized<T>(operation: () => Promise<T>): Promise<T> {
-    const execute = async () => {
+  private write<T>(operation: () => Promise<T>): Promise<T> {
+    return this.writeQueue.run(async () => {
       await this.ready;
       return operation();
-    };
-    return this.operationQueue.run(execute);
+    });
   }
-}
 
-function nextNumericSessionId(sessionIds: Iterable<string>): string {
-  let largest = 0n;
-  for (const sessionId of sessionIds) {
-    if (!/^\d+$/.test(sessionId)) continue;
-
-    const value = BigInt(sessionId);
-    if (value > largest) largest = value;
+  private async db(): Promise<Database> {
+    await this.ready;
+    return this.dbWithoutReady();
   }
-  return String(largest + 1n);
+
+  private dbWithoutReady(): Database {
+    if (this.database === undefined) {
+      throw new Error("Session database not initialized");
+    }
+    return this.database;
+  }
 }
 
 let sessionStore: SessionStore | undefined;
-export function initSessionStore(sdk: BackendSDK): SessionStore {
-  sessionStore ??= new SessionStore(sdk);
+export function initSessionStore(
+  sdk: BackendSDK,
+  database?: Promise<Database>,
+): SessionStore {
+  sessionStore ??= new SessionStore(sdk, database);
   return sessionStore;
 }
 export function getSessionStore(): SessionStore {
@@ -576,111 +535,224 @@ export function getSessionStore(): SessionStore {
   return sessionStore;
 }
 
-function toSnapshot(projects: Map<string, ProjectState>): unknown {
-  return {
-    version: SNAPSHOT_VERSION,
-    projects: [...projects].map(([projectId, project]) => ({
-      projectId,
-      revision: project.revision,
-      sessions: [...project.sessions.values()].map(
-        ({ descriptor, entries }) => ({
-          descriptor,
-          entries,
-        }),
-      ),
-    })),
-  };
+function nextNumericSessionId(sessionIds: Iterable<string>): string {
+  let largest = 0n;
+  for (const sessionId of sessionIds) {
+    if (!/^\d+$/.test(sessionId)) continue;
+    const value = BigInt(sessionId);
+    if (value > largest) largest = value;
+  }
+  return String(largest + 1n);
 }
 
-function parseSnapshot(value: unknown): Map<string, ProjectState> {
-  const parsed = fileSnapshotSchema.parse(value);
-  return new Map(
-    parsed.projects.map((project) => [
-      project.projectId,
-      {
-        revision: project.revision,
-        sessions: new Map(
-          project.sessions.map(({ descriptor, entries }) => [
-            descriptor.ref.sessionId,
-            {
-              descriptor,
-              entries,
-              nextSequence:
-                entries.reduce(
-                  (maximum, entry) => Math.max(maximum, entry.sequence),
-                  0,
-                ) + 1,
-            },
-          ]),
-        ),
-      },
-    ]),
+function descriptorFromRow(row: SessionRow): SessionDescriptor {
+  return sessionDescriptorSchema.parse({
+    ref: { projectId: row.project_id, sessionId: row.session_id },
+    state: row.state,
+    phase: row.phase,
+    totalParametersAmount: row.total_parameters_amount,
+    totalLearnRequests: row.total_learn_requests,
+    parametersSent: row.parameters_sent,
+    requestsSent: row.requests_sent,
+    findingsCount: row.findings_count,
+    logsCount: row.logs_count,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    error: parseOptionalJson(row.error_json),
+    rerun: parseOptionalJson(row.rerun_json),
+  });
+}
+
+function parseOptionalJson(value: string | null | undefined): unknown {
+  if (value === null || value === undefined || value === "") return undefined;
+  return JSON.parse(value);
+}
+
+function entryFromRow(row: EntryRow): SessionEntry {
+  return sessionEntrySchema.parse({
+    sequence: row.sequence,
+    kind: row.kind,
+    value: JSON.parse(row.value_json),
+  });
+}
+
+function sequenceEntry(
+  entry: SessionEntryInput,
+  sequence: number,
+): SessionEntry {
+  switch (entry.kind) {
+    case "request":
+      return { ...entry, sequence };
+    case "finding":
+      return { ...entry, sequence };
+    case "log":
+      return { ...entry, sequence };
+  }
+}
+
+async function ensureProject(database: Database, projectId: string) {
+  await (
+    await database.prepare(
+      `INSERT OR IGNORE INTO paramfinder_session_projects
+       (project_id, revision) VALUES (?, 0)`,
+    )
+  ).run(projectId);
+}
+
+async function incrementRevision(database: Database, projectId: string) {
+  await (
+    await database.prepare(
+      `UPDATE paramfinder_session_projects
+       SET revision = revision + 1 WHERE project_id = ?`,
+    )
+  ).run(projectId);
+}
+
+async function insertSession(database: Database, session: SessionDescriptor) {
+  await (
+    await database.prepare(
+      `INSERT INTO paramfinder_sessions (${SESSION_COLUMNS})
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+  ).run(...sessionParameters(session));
+}
+
+async function updateSessionRow(
+  database: Database,
+  session: SessionDescriptor,
+) {
+  await (
+    await database.prepare(
+      `UPDATE paramfinder_sessions SET
+       state = ?, phase = ?, total_parameters_amount = ?,
+       total_learn_requests = ?, parameters_sent = ?, requests_sent = ?,
+       findings_count = ?, logs_count = ?, created_at = ?, updated_at = ?,
+       error_json = ?, rerun_json = ?
+       WHERE project_id = ? AND session_id = ?`,
+    )
+  ).run(
+    session.state,
+    session.phase,
+    session.totalParametersAmount,
+    session.totalLearnRequests,
+    session.parametersSent,
+    session.requestsSent,
+    session.findingsCount,
+    session.logsCount,
+    session.createdAt,
+    session.updatedAt,
+    session.error === undefined ? null : JSON.stringify(session.error),
+    JSON.stringify(session.rerun),
+    session.ref.projectId,
+    session.ref.sessionId,
   );
 }
 
-function createStoredLegacySession(
-  projectId: string,
-  sessionId: string,
-  session: LegacySession,
-  now: number,
-): StoredSession {
-  let sequence = 1;
-  const entries: SessionEntry[] = [];
-  for (const value of session.sentRequests) {
-    entries.push(
-      sessionEntrySchema.parse({
-        sequence: sequence++,
-        kind: "request",
-        value,
-      }),
+function sessionParameters(session: SessionDescriptor): Parameter[] {
+  return [
+    session.ref.projectId,
+    session.ref.sessionId,
+    session.state,
+    session.phase,
+    session.totalParametersAmount,
+    session.totalLearnRequests,
+    session.parametersSent,
+    session.requestsSent,
+    session.findingsCount,
+    session.logsCount,
+    session.createdAt,
+    session.updatedAt,
+    session.error === undefined ? null : JSON.stringify(session.error),
+    JSON.stringify(session.rerun),
+  ];
+}
+
+async function insertEntries(
+  database: Database,
+  ref: SessionRef,
+  entries: SessionEntry[],
+) {
+  const placeholders = entries.map(
+    () => "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+  );
+  const parameters: Parameter[] = [];
+  for (const entry of entries) {
+    const projections = entryProjections(entry);
+    const value = JSON.stringify(entry.value);
+    parameters.push(
+      ref.projectId,
+      ref.sessionId,
+      entry.sequence,
+      entry.kind,
+      value,
+      value.toLowerCase(),
+      projections.requestId ?? null,
+      projections.responseStatus ?? null,
+      projections.responseLength ?? null,
+      projections.responseTime ?? null,
+      projections.parametersSent ?? null,
+      projections.parametersTested ?? null,
+      projections.context ?? null,
+      projections.parameter ?? null,
+      projections.anomaly ?? null,
     );
   }
-  for (const value of session.findings) {
-    entries.push(
-      sessionEntrySchema.parse({
-        sequence: sequence++,
-        kind: "finding",
-        value,
-      }),
-    );
-  }
-  for (const value of session.logs) {
-    entries.push(
-      sessionEntrySchema.parse({ sequence: sequence++, kind: "log", value }),
-    );
-  }
+  await (
+    await database.prepare(
+      `INSERT INTO paramfinder_session_entries (
+       project_id, session_id, sequence, kind, value_json, search_text,
+       request_id, response_status, response_length, response_time,
+       parameters_sent, parameters_tested, context, parameter, anomaly
+       ) VALUES ${placeholders.join(", ")}`,
+    )
+  ).run(...parameters);
+}
+
+function entryProjections(entry: SessionEntry) {
+  if (typeof entry.value === "string") return {};
   return {
-    descriptor: sessionDescriptorSchema.parse({
-      ref: { projectId, sessionId },
-      state: session.state,
-      phase: session.phase,
-      totalParametersAmount: session.totalParametersAmount,
-      totalLearnRequests: session.totalLearnRequests,
-      parametersSent: session.parametersSent,
-      requestsSent: session.requestsSent,
-      findingsCount: session.findings.length,
-      logsCount: session.logs.length,
-      createdAt: now,
-      updatedAt: now,
-      rerun: session.rerun,
-    }),
-    entries,
-    nextSequence: sequence,
+    requestId: entry.value.requestId,
+    responseStatus: entry.value.responseStatus,
+    responseLength: entry.value.responseLength,
+    responseTime:
+      "responseTime" in entry.value ? entry.value.responseTime : undefined,
+    parametersSent:
+      "parametersSent" in entry.value ? entry.value.parametersSent : undefined,
+    parametersTested:
+      "parametersSent" in entry.value
+        ? (entry.value.parametersTested ?? entry.value.parametersSent)
+        : undefined,
+    context: "context" in entry.value ? entry.value.context : undefined,
+    parameter:
+      "parameter" in entry.value ? entry.value.parameter.name : undefined,
+    anomaly: "anomaly" in entry.value ? entry.value.anomaly.type : undefined,
   };
 }
 
-function copyDescriptor(descriptor: SessionDescriptor): SessionDescriptor {
-  return sessionDescriptorSchema.parse(descriptor);
-}
-function copyEntry(entry: SessionEntry): SessionEntry {
-  return sessionEntrySchema.parse(entry);
+function sortColumn(field: SessionEntrySortField): string {
+  const columns: Record<SessionEntrySortField, string> = {
+    sequence: "sequence",
+    requestId: "request_id",
+    responseStatus: "response_status",
+    responseLength: "response_length",
+    responseTime: "response_time",
+    parametersSent: "parameters_sent",
+    parametersTested: "parameters_tested",
+    context: "context",
+    parameter: "parameter",
+    anomaly: "anomaly",
+  };
+  return columns[field];
 }
 
 type ParsedCursor = { snapshotMaxSequence: number; offset: number };
 export class InvalidCursorError extends Error {}
-function parseCursor(cursor: string | undefined): ParsedCursor | undefined {
+function parseCursor(
+  cursor: string | undefined,
+  expectedSignature: string,
+): ParsedCursor | undefined {
   if (!cursor) return undefined;
-  const match = /^v1:(\d+):(\d+)$/.exec(cursor);
+  const match = /^v2:(\d+):(\d+):([A-Za-z0-9_-]+)$/.exec(cursor);
   if (!match) throw new InvalidCursorError("Invalid session entry cursor");
   const snapshotMaxSequence = Number(match[1]);
   const offset = Number(match[2]);
@@ -692,89 +764,29 @@ function parseCursor(cursor: string | undefined): ParsedCursor | undefined {
   ) {
     throw new InvalidCursorError("Invalid session entry cursor");
   }
+  if (match[3] !== expectedSignature) {
+    throw new InvalidCursorError(
+      "Session entry cursor does not match the current query",
+    );
+  }
   return { snapshotMaxSequence, offset };
 }
-function formatCursor(cursor: ParsedCursor): string {
-  return `v1:${cursor.snapshotMaxSequence}:${cursor.offset}`;
+
+function formatCursor(cursor: ParsedCursor, signature: string): string {
+  return `v2:${cursor.snapshotMaxSequence}:${cursor.offset}:${signature}`;
 }
 
-function maximumSequence(
-  entries: SessionEntry[],
-  kind: SessionEntryKind,
-): number {
-  let maximum = 0;
-  for (const entry of entries) {
-    if (entry.kind === kind) maximum = Math.max(maximum, entry.sequence);
-  }
-  return maximum;
-}
-
-function compareEntries(
-  left: SessionEntry,
-  right: SessionEntry,
-  sort: NonNullable<SessionEntriesQuery["sort"]>,
-): number {
-  const direction = sort.direction === "desc" ? -1 : 1;
-  const compared = compareValues(
-    sortValue(left, sort.field),
-    sortValue(right, sort.field),
-  );
-  return (compared || left.sequence - right.sequence) * direction;
-}
-
-function sortValue(
-  entry: SessionEntry,
-  field: NonNullable<SessionEntriesQuery["sort"]>["field"],
-): string | number | undefined {
-  if (field === "sequence") return entry.sequence;
-  if (typeof entry.value === "string") return undefined;
-  switch (field) {
-    case "requestId":
-      return entry.value.requestId;
-    case "responseStatus":
-      return entry.value.responseStatus;
-    case "responseLength":
-      return entry.value.responseLength;
-    case "responseTime":
-      return "responseTime" in entry.value
-        ? entry.value.responseTime
-        : undefined;
-    case "parametersSent":
-      return "parametersSent" in entry.value
-        ? entry.value.parametersSent
-        : undefined;
-    case "parametersTested":
-      return "parametersSent" in entry.value
-        ? (entry.value.parametersTested ?? entry.value.parametersSent)
-        : undefined;
-    case "context":
-      return "context" in entry.value ? entry.value.context : undefined;
-    case "parameter":
-      return "parameter" in entry.value
-        ? entry.value.parameter.name
-        : undefined;
-    case "anomaly":
-      return "anomaly" in entry.value ? entry.value.anomaly.type : undefined;
-  }
-}
-
-function compareValues(
-  left: string | number | undefined,
-  right: string | number | undefined,
-): number {
-  if (left === right) return 0;
-  if (left === undefined) return -1;
-  if (right === undefined) return 1;
-  if (typeof left === "number" && typeof right === "number")
-    return left - right;
-  return compareStrings(String(left), String(right));
-}
-
-function compareStrings(left: string, right: string): number {
-  if (left === right) return 0;
-  return left < right ? -1 : 1;
-}
-
-function safeFilename(value: string): string {
-  return value.replace(/[^a-zA-Z0-9_-]/g, "_");
+function querySignature(query: SessionEntriesQuery): string {
+  const sort = query.sort ?? { field: "sequence", direction: "asc" };
+  const normalized = JSON.stringify({
+    ref: query.ref,
+    kind: query.kind,
+    sort,
+    filter: query.filter?.trim().toLowerCase() ?? "",
+  });
+  return Buffer.from(normalized, "utf8")
+    .toString("base64")
+    .replaceAll("+", "-")
+    .replaceAll("/", "_")
+    .replace(/=+$/, "");
 }

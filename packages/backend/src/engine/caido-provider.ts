@@ -8,7 +8,6 @@ import { createHeaderMap } from "@paramfinder/engine";
 import type { SDK } from "caido:plugin";
 import { RequestSpec } from "caido:utils";
 
-/** The engine owns cancellation; Caido's global timeout stops the transport. */
 export class CaidoRequestProvider implements RequestProvider {
   public constructor(private readonly sdk: SDK) {}
 

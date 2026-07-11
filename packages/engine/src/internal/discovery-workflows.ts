@@ -23,9 +23,13 @@ import type {
 import { AnomalyType, EnginePhase, EngineState } from "../types";
 import { sanitizeWords } from "../utils";
 
+import { createBaselineHealthMonitor } from "./baseline-health";
 import type { EngineRuntimeContext } from "./runtime";
 import { type AutopilotResult, getConfiguredMaxSize } from "./shared";
 import { createParameterChunkVerifier } from "./verified-finding";
+
+const DRIFT_RECHECK_THRESHOLD = 3;
+const MAX_SCAN_CALIBRATIONS = 3;
 
 interface DiscoveryWorkflowDependencies {
   handleAutopilotResponse: (args: {
@@ -44,6 +48,7 @@ export function createDiscoveryWorkflows(
   dependencies: DiscoveryWorkflowDependencies,
 ) {
   const parameterChunkVerifier = createParameterChunkVerifier(runtimeContext);
+  const baselineHealthMonitor = createBaselineHealthMonitor(runtimeContext);
 
   const verifySingleParameter = async (args: {
     request: EngineRequest;
@@ -174,6 +179,10 @@ export function createDiscoveryWorkflows(
       parsed.profile.maxSize ?? getConfiguredMaxSize(parsed.engineConfig);
     let nextIndex = 0;
     let hasAdjustedQuerySize = false;
+    let effectiveMaxParametersAmount = parsed.engineConfig.maxParametersAmount;
+    let calibrationPending = true;
+    let calibrationAttempts = 0;
+    let consecutiveRejectedAnomalies = 0;
 
     runtimeContext.emit(parsed.runOptions, {
       type: "state",
@@ -183,13 +192,14 @@ export function createDiscoveryWorkflows(
 
     while (nextIndex < sanitizedWords.length) {
       await runtimeContext.waitForCheckpoint(parsed.runOptions);
+      const chunkStartIndex = nextIndex;
       const chunk = getNextChunk({
         words: sanitizedWords,
         startIndex: nextIndex,
         request: parsed.request,
         attackType: parsed.engineConfig.attackType,
         maxSize,
-        maxParametersAmount: parsed.engineConfig.maxParametersAmount,
+        maxParametersAmount: effectiveMaxParametersAmount,
         customValue: parsed.engineConfig.customValue,
         customValueType: parsed.engineConfig.customValueType,
         jsonBodyPath: parsed.engineConfig.jsonBodyPath,
@@ -198,6 +208,24 @@ export function createDiscoveryWorkflows(
 
       if (chunk.parameters.length === 0) {
         break;
+      }
+
+      if (calibrationPending) {
+        calibrationAttempts += 1;
+        const calibration = await baselineHealthMonitor.calibrate({
+          request: parsed.request,
+          parameters: chunk.parameters,
+          engineConfig: parsed.engineConfig,
+          profile: parsed.profile,
+          runOptions: parsed.runOptions,
+          maxParametersAmount: effectiveMaxParametersAmount,
+        });
+        effectiveMaxParametersAmount = calibration.maxParametersAmount;
+        calibrationPending = false;
+        if (calibration.changed) {
+          nextIndex = chunkStartIndex;
+          continue;
+        }
       }
 
       const requestResponse = await runtimeContext.sendMutatedRequest({
@@ -308,6 +336,7 @@ export function createDiscoveryWorkflows(
         });
 
         if (verified) {
+          consecutiveRejectedAnomalies = 0;
           runtimeContext.emit(parsed.runOptions, {
             type: "log",
             level: "info",
@@ -322,7 +351,20 @@ export function createDiscoveryWorkflows(
             ignoredAnomalyTypes,
           });
           findings.push(...narrowedFindings);
+        } else {
+          consecutiveRejectedAnomalies += 1;
+          if (
+            consecutiveRejectedAnomalies >= DRIFT_RECHECK_THRESHOLD &&
+            calibrationAttempts < MAX_SCAN_CALIBRATIONS
+          ) {
+            consecutiveRejectedAnomalies = 0;
+            calibrationPending = true;
+            nextIndex = chunkStartIndex;
+            continue;
+          }
         }
+      } else {
+        consecutiveRejectedAnomalies = 0;
       }
 
       await runtimeContext.sleepIfNeeded(parsed.runOptions);

@@ -2,12 +2,11 @@ import {
   type ApiResult,
   error,
   type ParamMinerConfig,
-  paramMinerConfigSchema,
   type Request,
-  requestSchema,
   type SessionDescriptor,
   type SessionRef,
   sessionRefSchema,
+  startMiningInputSchema,
 } from "shared";
 
 import {
@@ -30,23 +29,19 @@ export async function startMining(
       "NO_PROJECT",
     );
   }
-  const targetResult = requestSchema.safeParse(target);
-  const configResult = paramMinerConfigSchema.safeParse(config);
-  if (!targetResult.success || !configResult.success) {
+
+  const input = startMiningInputSchema.safeParse({ target, config });
+  if (!input.success) {
     return error("Invalid scan target or configuration.", "VALIDATION", {
-      target: targetResult.success
-        ? []
-        : targetResult.error.issues.map((issue) => issue.message),
-      config: configResult.success
-        ? []
-        : configResult.error.issues.map((issue) => issue.message),
+      issues: input.error.issues.map((issue) => issue.message),
     });
   }
+
   return startEngineSession(
     sdk,
     project.getId(),
-    targetResult.data,
-    configResult.data,
+    input.data.target,
+    input.data.config,
   );
 }
 
@@ -60,6 +55,7 @@ function withSessionRef(
     if (!parsed.success) {
       return error("Invalid session reference.", "VALIDATION");
     }
+
     return handler(sdk, parsed.data);
   };
 }

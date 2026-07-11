@@ -3,12 +3,6 @@ import type { EngineRequest, HeaderMap, LoggerFn, LoggerLevel } from "./types";
 export const DEFAULT_LEARNING_PARAMETER_NAME_LENGTH = 10;
 export const DEFAULT_LEARNING_PARAMETER_VALUE_LENGTH = 10;
 
-export function cloneHeaders(headers: HeaderMap): HeaderMap {
-  return Object.fromEntries(
-    Object.entries(headers).map(([name, values]) => [name, [...values]]),
-  );
-}
-
 export function normalizeHeaderName(name: string): string {
   return name.toLowerCase();
 }

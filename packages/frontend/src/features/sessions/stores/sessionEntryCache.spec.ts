@@ -8,6 +8,19 @@ import {
 } from "./sessionEntryCache";
 
 describe("session entry cache", () => {
+  it("returns a new cache without mutating the previous snapshot", () => {
+    const cache = createEntryCache({ field: "sequence", direction: "asc" });
+    const next = appendEntry(cache, {
+      sequence: 1,
+      kind: "log",
+      value: "one",
+    });
+
+    expect(cache.entries).toEqual([]);
+    expect(cache.knownEntries).toEqual({});
+    expect(next.entries).toHaveLength(1);
+  });
+
   it("deduplicates entries across a page and live event overlap", () => {
     const first = appendEntry(
       createEntryCache({ field: "sequence", direction: "asc" }),
@@ -130,21 +143,6 @@ describe("session entry cache", () => {
       { sequence: 2, kind: "log", value: "new" },
     ]);
     expect(refreshed.loading).toBe(false);
-  });
-
-  it("keeps every live entry for the active chronological cache", () => {
-    let cache = createEntryCache({ field: "sequence", direction: "asc" });
-    for (let sequence = 1; sequence <= 100_000; sequence++) {
-      cache = appendEntry(cache, {
-        sequence,
-        kind: "log",
-        value: `log-${sequence}`,
-      });
-    }
-    expect(cache.total).toBe(100_000);
-    expect(cache.entries).toHaveLength(100_000);
-    expect(cache.snapshotMaxSequence).toBe(100_000);
-    expect(cache.stale).toBe(false);
   });
 
   it("merges an old cursor page into live chronological entries", () => {

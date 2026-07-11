@@ -12,7 +12,13 @@ export const INSPECTABLE_BODY_KINDS = [
 export const MUTABLE_BODY_KINDS = ["json", "urlencoded", "multipart"] as const;
 export const PARAMETER_VALUE_TYPES = ["string", "integer"] as const;
 
-export type AttackType = (typeof ATTACK_TYPES)[number];
+export const AttackType = {
+  Query: ATTACK_TYPES[0],
+  Body: ATTACK_TYPES[1],
+  Headers: ATTACK_TYPES[2],
+} as const;
+
+export type AttackType = (typeof AttackType)[keyof typeof AttackType];
 export type RequestContext = (typeof REQUEST_CONTEXTS)[number];
 export type InspectableBodyKind = (typeof INSPECTABLE_BODY_KINDS)[number];
 export type MutableBodyKind = (typeof MUTABLE_BODY_KINDS)[number];
@@ -54,57 +60,59 @@ export interface Parameter {
   value: string;
 }
 
-export enum AnomalyType {
-  StatusCode = "status-code",
-  Headers = "headers",
-  ReflectionCount = "reflection_count",
-  Body = "body",
-  Redirect = "redirect",
-  Similarity = "similarity",
-}
+export const AnomalyType = {
+  StatusCode: "status-code",
+  Headers: "headers",
+  ReflectionCount: "reflection_count",
+  Body: "body",
+  Redirect: "redirect",
+  Similarity: "similarity",
+} as const;
+
+export type AnomalyType = (typeof AnomalyType)[keyof typeof AnomalyType];
 
 export interface StatusCodeAnomaly {
-  type: AnomalyType.StatusCode;
+  type: typeof AnomalyType.StatusCode;
   from: number;
   to: number;
 }
 
 export interface RedirectAnomaly {
-  type: AnomalyType.Redirect;
+  type: typeof AnomalyType.Redirect;
   from?: string;
   to?: string;
 }
 
 export interface HeadersAnomaly {
-  type: AnomalyType.Headers;
+  type: typeof AnomalyType.Headers;
   headerName: string;
   from?: string[];
   to?: string[];
 }
 
 export interface ReflectionCountAnomaly {
-  type: AnomalyType.ReflectionCount;
+  type: typeof AnomalyType.ReflectionCount;
   parameterName: string;
   from: number;
   to: number;
 }
 
 export interface BodyLengthAnomaly {
-  type: AnomalyType.Body;
+  type: typeof AnomalyType.Body;
   check: "length";
   from: number;
   to: number;
 }
 
 export interface BodyContentAnomaly {
-  type: AnomalyType.Body;
+  type: typeof AnomalyType.Body;
   check: "content";
   expectedDiffCount: number;
   actualDiffCount: number;
 }
 
 export interface SimilarityAnomaly {
-  type: AnomalyType.Similarity;
+  type: typeof AnomalyType.Similarity;
   similarity: number;
   threshold: number;
 }
@@ -156,22 +164,26 @@ export interface BaselineProfile {
   multipartBoundary?: string;
 }
 
-export enum EngineState {
-  Pending = "pending",
-  Learning = "learning",
-  Running = "running",
-  Completed = "completed",
-  Error = "error",
-  Paused = "paused",
-  Canceled = "canceled",
-  Timeout = "timeout",
-}
+export const EngineState = {
+  Pending: "pending",
+  Learning: "learning",
+  Running: "running",
+  Completed: "completed",
+  Error: "error",
+  Paused: "paused",
+  Canceled: "canceled",
+  Timeout: "timeout",
+} as const;
 
-export enum EnginePhase {
-  Learning = "learning",
-  Discovery = "discovery",
-  Idle = "idle",
-}
+export type EngineState = (typeof EngineState)[keyof typeof EngineState];
+
+export const EnginePhase = {
+  Learning: "learning",
+  Discovery: "discovery",
+  Idle: "idle",
+} as const;
+
+export type EnginePhase = (typeof EnginePhase)[keyof typeof EnginePhase];
 
 export interface EngineConfig {
   attackType: AttackType;
@@ -243,23 +255,23 @@ export interface EngineRunSummaryBase {
 }
 
 export interface EngineCompletedRunSummary extends EngineRunSummaryBase {
-  state: EngineState.Completed;
-  phase: EnginePhase.Discovery;
+  state: typeof EngineState.Completed;
+  phase: typeof EnginePhase.Discovery;
 }
 
 export interface EngineCanceledRunSummary extends EngineRunSummaryBase {
-  state: EngineState.Canceled;
-  phase: EnginePhase.Learning | EnginePhase.Discovery;
+  state: typeof EngineState.Canceled;
+  phase: typeof EnginePhase.Learning | typeof EnginePhase.Discovery;
 }
 
 export interface EngineTimeoutRunSummary extends EngineRunSummaryBase {
-  state: EngineState.Timeout;
-  phase: EnginePhase.Learning | EnginePhase.Discovery;
+  state: typeof EngineState.Timeout;
+  phase: typeof EnginePhase.Learning | typeof EnginePhase.Discovery;
 }
 
 export interface EngineFailedRunSummary extends EngineRunSummaryBase {
-  state: EngineState.Error;
-  phase: EnginePhase.Learning | EnginePhase.Discovery;
+  state: typeof EngineState.Error;
+  phase: typeof EnginePhase.Learning | typeof EnginePhase.Discovery;
   failureReason: string;
 }
 
@@ -270,28 +282,19 @@ export type EngineRunSummary =
   | EngineFailedRunSummary;
 
 export interface EngineCompletedRunResult extends EngineCompletedRunSummary {
-  state: EngineState.Completed;
-  phase: EnginePhase.Discovery;
   profile: BaselineProfile;
 }
 
 export interface EngineCanceledRunResult extends EngineCanceledRunSummary {
-  state: EngineState.Canceled;
-  phase: EnginePhase.Learning | EnginePhase.Discovery;
   profile?: BaselineProfile;
 }
 
 export interface EngineTimeoutRunResult extends EngineTimeoutRunSummary {
-  state: EngineState.Timeout;
-  phase: EnginePhase.Learning | EnginePhase.Discovery;
   profile?: BaselineProfile;
 }
 
 export interface EngineFailedRunResult extends EngineFailedRunSummary {
-  state: EngineState.Error;
-  phase: EnginePhase.Learning | EnginePhase.Discovery;
   profile?: BaselineProfile;
-  failureReason: string;
 }
 
 export type EngineRunResult =

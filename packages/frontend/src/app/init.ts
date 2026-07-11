@@ -3,8 +3,8 @@ import { createPinia } from "pinia";
 import PrimeVue from "primevue/config";
 import ConfirmationService from "primevue/confirmationservice";
 import Tooltip from "primevue/tooltip";
-import type { ApiResult } from "shared";
-import { createApp } from "vue";
+import type { ApiResult, SessionChangeEnvelope } from "shared";
+import { createApp, watch } from "vue";
 
 import App from "./App.vue";
 
@@ -39,8 +39,6 @@ export const init = (sdk: FrontendSDK) => {
 
   app.mount(root);
 
-  setupEvents(sdk);
-  setupCommands(sdk);
   const sessionsStore = useSessionsStore();
 
   const reportSessionLoad = (load: Promise<ApiResult<void>>) => {
@@ -67,56 +65,80 @@ export const init = (sdk: FrontendSDK) => {
       });
   };
 
-  reportSessionLoad(sessionsStore.initialize());
-
   const lifecycle = usePageLifecycle();
   let sidebarCount = 0;
-  let isOnPage = false;
-
-  sdk.navigation.onPageChange((event) => {
-    isOnPage = event.path === "/paramfinder";
-  });
-
-  sdk.navigation.addPage("/paramfinder", {
-    body: root,
-    onEnter: () => {
-      isOnPage = true;
-      sidebarCount = 0;
-      sidebarItem.setCount(sidebarCount);
-      lifecycle.triggerPageEnter();
-    },
-  });
 
   const sidebarItem = sdk.sidebar.registerItem("Param Finder", "/paramfinder", {
     icon: "fas fa-search",
   });
 
   const notifiedSessions = new Set<string>();
-  sdk.projects.onCurrentProjectChange((event) => {
-    sidebarCount = 0;
-    notifiedSessions.clear();
-    sidebarItem.setCount(sidebarCount);
-    reportSessionLoad(sessionsStore.reloadForProject(event.projectId));
-  });
+  let pendingNotificationEnvelopes: SessionChangeEnvelope[] = [];
 
-  sdk.backend.onEvent("paramfinder:session_change", (envelope) => {
-    if (envelope.projectId !== sessionsStore.currentProjectId) {
-      return;
-    }
+  const countNewSessions = (envelope: SessionChangeEnvelope) => {
+    if (envelope.projectId !== sessionsStore.currentProjectId) return;
+
     const added = envelope.changes.filter((change) => {
-      if (change.type !== "upsert") {
-        return false;
-      }
+      if (change.type !== "upsert") return false;
       const key = `${change.session.ref.projectId}:${change.session.ref.sessionId}`;
-      if (notifiedSessions.has(key)) {
-        return false;
-      }
+      if (notifiedSessions.has(key)) return false;
       notifiedSessions.add(key);
       return true;
     }).length;
-    if (added > 0 && !isOnPage) {
+
+    if (added > 0 && location.hash !== "#/paramfinder") {
       sidebarCount += added;
       sidebarItem.setCount(sidebarCount);
     }
+  };
+
+  const flushSessionNotifications = () => {
+    const pending = pendingNotificationEnvelopes;
+    pendingNotificationEnvelopes = [];
+    for (const envelope of pending) {
+      countNewSessions(envelope);
+    }
+  };
+
+  watch(
+    () => sessionsStore.hydrated,
+    (hydrated) => {
+      if (hydrated) flushSessionNotifications();
+    },
+  );
+
+  setupEvents(sdk, (envelope) => {
+    if (!sessionsStore.hydrated) {
+      pendingNotificationEnvelopes.push(envelope);
+      return;
+    }
+    countNewSessions(envelope);
+  });
+  setupCommands(sdk);
+  const initialize = sessionsStore.initialize();
+  reportSessionLoad(initialize);
+  void initialize.then((result) => {
+    if (result.success) flushSessionNotifications();
+  });
+
+  sdk.navigation.addPage("/paramfinder", {
+    body: root,
+    onEnter: () => {
+      sidebarCount = 0;
+      sidebarItem.setCount(sidebarCount);
+      lifecycle.triggerPageEnter();
+    },
+  });
+
+  sdk.projects.onCurrentProjectChange((event) => {
+    sidebarCount = 0;
+    notifiedSessions.clear();
+    pendingNotificationEnvelopes = [];
+    sidebarItem.setCount(sidebarCount);
+    const reload = sessionsStore.reloadForProject(event.projectId);
+    reportSessionLoad(reload);
+    void reload.then((result) => {
+      if (result.success) flushSessionNotifications();
+    });
   });
 };

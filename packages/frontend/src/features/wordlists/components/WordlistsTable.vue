@@ -1,11 +1,11 @@
 <script setup lang="ts">
+import { storeToRefs } from "pinia";
 import Button from "primevue/button";
 import Checkbox from "primevue/checkbox";
 import Column from "primevue/column";
 import DataTable from "primevue/datatable";
 import SelectButton from "primevue/selectbutton";
 import type { AttackType, Wordlist } from "shared";
-import { computed } from "vue";
 
 import { useWordlistsStore } from "../stores/store";
 
@@ -19,31 +19,13 @@ const emit = defineEmits<{
 }>();
 
 const wordlistsStore = useWordlistsStore();
+const { data: wordlists, loading, mutation } = storeToRefs(wordlistsStore);
 const { showResult } = useActionResult();
 const confirm = useConfirm();
 
-const wordlists = computed(() => wordlistsStore.data);
-const anyMutationPending = computed(
-  () => wordlistsStore.mutation !== undefined,
-);
+const displayName = (path: string) => path.replace(/^.*[\\/]/, "");
 
-const isRowBusy = (id: string) => {
-  const mutation = wordlistsStore.mutation;
-  if (mutation === undefined) {
-    return false;
-  }
-  if (mutation.type === "clear") {
-    return true;
-  }
-  if (
-    mutation.type === "toggle" ||
-    mutation.type === "remove" ||
-    mutation.type === "attackTypes"
-  ) {
-    return mutation.id === id;
-  }
-  return false;
-};
+const isRowBusy = () => mutation.value !== undefined;
 
 const toggleEnabled = async (wordlist: Wordlist) => {
   showResult(await wordlistsStore.toggle(wordlist), {
@@ -60,10 +42,10 @@ const onAttackTypesChange = async (wordlist: Wordlist, next: AttackType[]) => {
 const remove = (wordlist: Wordlist) => {
   confirm.require({
     header: "Remove wordlist",
-    message: `Remove wordlist "${wordlist.name}"?`,
+    message: `Remove wordlist "${displayName(wordlist.path)}"?`,
     acceptLabel: "Remove",
     accept: async () => {
-      showResult(await wordlistsStore.remove(wordlist.id), {
+      showResult(await wordlistsStore.remove(wordlist.path), {
         errorPrefix: "Failed to remove wordlist",
       });
     },
@@ -110,7 +92,7 @@ const clearAll = () => {
           size="small"
           severity="secondary"
           outlined
-          :disabled="wordlistsStore.data.length === 0 || anyMutationPending"
+          :disabled="wordlists.length === 0 || mutation !== undefined"
           @click="clearAll"
         />
       </div>
@@ -121,9 +103,9 @@ const clearAll = () => {
       striped-rows
       scrollable
       scroll-height="flex"
-      data-key="id"
+      data-key="path"
       class="flex-1 min-h-0"
-      :loading="wordlistsStore.loading"
+      :loading="loading"
       :pt="{
         root: { class: 'flex-1 min-h-0 flex flex-col' },
         tableContainer: { class: 'flex-1 min-h-0' },
@@ -142,25 +124,14 @@ const clearAll = () => {
           <Checkbox
             :model-value="data.enabled"
             binary
-            :disabled="isRowBusy(data.id) || data.status !== 'active'"
+            :disabled="isRowBusy()"
             @update:model-value="toggleEnabled(data)"
           />
         </template>
       </Column>
-      <Column field="name" header="Name">
+      <Column field="path" header="Name">
         <template #body="{ data }">
-          <div class="flex flex-col">
-            <span class="text-sm select-text">{{ data.name }}</span>
-            <span v-if="data.error" class="text-xs text-danger-300">
-              {{ data.error }}
-            </span>
-            <span
-              v-else-if="data.status !== 'active'"
-              class="text-xs text-surface-400"
-            >
-              {{ data.status }}
-            </span>
-          </div>
+          <span class="text-sm select-text">{{ displayName(data.path) }}</span>
         </template>
       </Column>
       <Column header="Attack Types" style="width: 280px">
@@ -172,7 +143,7 @@ const clearAll = () => {
             option-value="value"
             multiple
             size="small"
-            :disabled="isRowBusy(data.id) || data.status !== 'active'"
+            :disabled="isRowBusy()"
             @update:model-value="onAttackTypesChange(data, $event)"
           />
         </template>
@@ -185,8 +156,8 @@ const clearAll = () => {
             size="small"
             severity="secondary"
             text
-            :loading="isRowBusy(data.id)"
-            :disabled="isRowBusy(data.id)"
+            :loading="isRowBusy()"
+            :disabled="isRowBusy()"
             @click="remove(data)"
           />
         </template>

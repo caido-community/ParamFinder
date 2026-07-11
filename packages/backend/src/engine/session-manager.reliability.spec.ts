@@ -22,6 +22,7 @@ import type { BackendSDK } from "../types/types";
 import {
   cancelEngineSession,
   pauseEngineSession,
+  pauseSessionsOutsideProject,
   startEngineSession,
   tombstoneRunningSessions,
 } from "./session-manager";
@@ -259,6 +260,113 @@ afterEach(() => {
 });
 
 describe("session manager reliability", () => {
+  it("rejects invalid engine configuration before creating a session", async () => {
+    const sdk = createSdk();
+
+    await expect(
+      startEngineSession(sdk, ref.projectId, createRequest(), {
+        ...createConfig(),
+        customValue: "not-an-integer",
+        customValueType: "integer",
+      }),
+    ).resolves.toMatchObject({
+      success: false,
+      error: { code: "VALIDATION" },
+    });
+
+    expect(store.createNextSession).not.toHaveBeenCalled();
+    expect(testState.runDiscoveryScan).not.toHaveBeenCalled();
+    expect(envelopes).toEqual([]);
+  });
+
+  it("rejects sub-millisecond timeouts before creating a session", async () => {
+    const sdk = createSdk();
+
+    await expect(
+      startEngineSession(sdk, ref.projectId, createRequest(), {
+        ...createConfig(),
+        scanTimeoutSeconds: 0.0005,
+      }),
+    ).resolves.toMatchObject({
+      success: false,
+      error: { code: "VALIDATION" },
+    });
+
+    expect(store.createNextSession).not.toHaveBeenCalled();
+    expect(testState.runDiscoveryScan).not.toHaveBeenCalled();
+    expect(envelopes).toEqual([]);
+  });
+
+  it("rejects an unsupported body before creating a session", async () => {
+    const sdk = createSdk();
+    const request = {
+      ...createRequest(),
+      method: "POST",
+      raw: "POST / HTTP/1.1\r\nHost: example.com\r\n\r\n",
+    };
+
+    await expect(
+      startEngineSession(sdk, ref.projectId, request, {
+        ...createConfig(),
+        attackType: "body",
+      }),
+    ).resolves.toEqual({
+      success: false,
+      error: {
+        code: "VALIDATION",
+        message: "Unsupported body type for mutation: text",
+      },
+    });
+
+    expect(store.createNextSession).not.toHaveBeenCalled();
+    expect(testState.runDiscoveryScan).not.toHaveBeenCalled();
+    expect(envelopes).toEqual([]);
+  });
+
+  it("terminalizes a created session when startup persistence fails", async () => {
+    const sdk = createSdk();
+    store.updateSession.mockRejectedValueOnce(
+      new Error("database unavailable"),
+    );
+
+    await expect(
+      startEngineSession(sdk, ref.projectId, createRequest(), createConfig()),
+    ).resolves.toMatchObject({ success: false });
+
+    expect(store.current()).toMatchObject({
+      state: EngineState.Error,
+      phase: EnginePhase.Idle,
+      error: { message: "database unavailable" },
+    });
+    expect(testState.runDiscoveryScan).not.toHaveBeenCalled();
+    expect(envelopes.flatMap((envelope) => envelope.changes)).toContainEqual(
+      expect.objectContaining({
+        type: "terminal",
+        session: expect.objectContaining({ state: EngineState.Error }),
+      }),
+    );
+  });
+
+  it("pauses a running session when another project becomes active", async () => {
+    const sdk = createSdk();
+    await startEngineSession(
+      sdk,
+      ref.projectId,
+      createRequest(),
+      createConfig(),
+    );
+    await vi.waitFor(() =>
+      expect(store.current().state).toBe(EngineState.Learning),
+    );
+
+    await expect(
+      pauseSessionsOutsideProject(sdk, "project-2"),
+    ).resolves.toEqual({ success: true, value: undefined });
+    expect(store.current().state).toBe(EngineState.Paused);
+
+    scan.resolve(scanResult(EngineState.Completed, EnginePhase.Discovery));
+  });
+
   it("publishes every entry before the terminal event with correct counters", async () => {
     const sdk = createSdk();
     await expect(
@@ -516,6 +624,55 @@ describe("session manager reliability", () => {
         message: expect.stringContaining("database unavailable"),
       },
     });
+  });
+
+  it("retries a transient terminal persistence failure", async () => {
+    const sdk = createSdk();
+    await startEngineSession(
+      sdk,
+      ref.projectId,
+      createRequest(),
+      createConfig(),
+    );
+    store.updateSession.mockRejectedValueOnce(
+      new Error("database unavailable"),
+    );
+
+    scan.resolve(scanResult(EngineState.Completed, EnginePhase.Discovery));
+
+    await vi.waitFor(() =>
+      expect(store.current().state).toBe(EngineState.Completed),
+    );
+    expect(
+      store.updateSession.mock.calls.filter(
+        ([, changes]) => changes.state === EngineState.Completed,
+      ),
+    ).toHaveLength(2);
+  });
+
+  it("keeps a session controllable after terminal persistence exhausts retries", async () => {
+    const sdk = createSdk();
+    await startEngineSession(
+      sdk,
+      ref.projectId,
+      createRequest(),
+      createConfig(),
+    );
+    const updateSession = store.updateSession.getMockImplementation();
+    store.updateSession.mockRejectedValue(new Error("database unavailable"));
+
+    scan.resolve(scanResult(EngineState.Completed, EnginePhase.Discovery));
+    await vi.waitFor(() =>
+      expect(store.updateSession).toHaveBeenCalledTimes(3),
+    );
+    expect(store.current().state).toBe(EngineState.Learning);
+
+    store.updateSession.mockImplementation(updateSession!);
+    await expect(cancelEngineSession(sdk, ref)).resolves.toEqual({
+      success: true,
+      value: undefined,
+    });
+    expect(store.current().state).toBe(EngineState.Canceled);
   });
 
   it("resumes the runtime when paused-state persistence fails", async () => {

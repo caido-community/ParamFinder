@@ -6,11 +6,7 @@ import {
 } from "shared";
 import { describe, expect, it } from "vitest";
 
-import {
-  createFindingRows,
-  createRequestRows,
-  getFindingKey,
-} from "./sessionRows";
+import { createFindingRows, createRequestRows } from "./sessionRows";
 
 function createSession(
   overrides: {
@@ -106,18 +102,5 @@ describe("sessionRows", () => {
     expect(rows[1]?.key).toBe("99");
     expect(rows[0]?.parameter).toBe("id");
     expect(rows[0]?.anomaly).toBe(AnomalyType.StatusCode);
-  });
-
-  it("derives a stable finding key from its persisted sequence", () => {
-    const finding: Sequenced<SessionFinding> = {
-      sequence: 72,
-      requestId: "request-1",
-      responseStatus: 200,
-      responseLength: 10,
-      parameter: { name: "token", value: "x" },
-      anomaly: { type: AnomalyType.StatusCode, from: 200, to: 404 },
-    };
-
-    expect(getFindingKey(finding)).toBe("72");
   });
 });

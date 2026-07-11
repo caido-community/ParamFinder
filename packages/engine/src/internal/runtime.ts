@@ -2,16 +2,23 @@ import { matchesWafResponse } from "../detect-anomaly";
 import { EngineError } from "../errors";
 import type { DiscoveryEvent } from "../events";
 import { mutateRequest } from "../mutate-request";
-import { defaultSleep, type EngineDependencies } from "../provider";
+import {
+  defaultSleep,
+  type EngineDependencies,
+  type RequestProvider,
+} from "../provider";
 import type {
   AttackType,
   EngineConfig,
   EngineRequest,
   EngineRequestResponse,
   EngineResponse,
+  LoggerFn,
   Parameter,
+  RandomSource,
   RequestContext,
   RunOptions,
+  SleepFn,
 } from "../types";
 import { EnginePhase, EngineState } from "../types";
 import { emitLog } from "../utils";
@@ -44,11 +51,11 @@ interface PauseForInterventionOptions {
 
 export interface EngineRuntimeContext {
   runtime: {
-    provider: EngineDependencies["provider"];
-    sleep: NonNullable<EngineDependencies["sleep"]> | typeof defaultSleep;
-    now: NonNullable<EngineDependencies["now"]> | DateConstructor["now"];
-    random: NonNullable<EngineDependencies["random"]> | Math["random"];
-    logger: EngineDependencies["logger"];
+    provider: RequestProvider;
+    sleep: SleepFn;
+    now: () => number;
+    random: RandomSource;
+    logger?: LoggerFn;
   };
   emit: (runOptions: EventSink, event: DiscoveryEvent) => void;
   waitForCheckpoint: (runOptions?: RunOptions) => Promise<void>;

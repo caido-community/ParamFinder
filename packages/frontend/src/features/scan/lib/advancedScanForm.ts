@@ -1,27 +1,20 @@
-import type { AttackType } from "shared";
-
 import type {
+  AdvancedScanOptions,
   AdvancedScanRequest,
-  AdvancedScanResult,
 } from "../stores/scanDialog";
 
 export const advancedScanCacheKey = "paramfinder.advanced-scan.cache";
 
-export type AdvancedScanCache = {
-  attackType?: AttackType;
-  customValue?: string;
-  jsonBodyPath?: string;
-  cacheBusterParameter?: boolean;
-  maxParametersAmount?: number;
-};
-
-export type AdvancedScanFormValues = {
-  attackType: AttackType;
+export type AdvancedScanFormValues = Omit<
+  AdvancedScanOptions,
+  "customValue" | "jsonBodyPath" | "cacheBusterParameter"
+> & {
   customValue: string;
   jsonBodyPath: string;
   cacheBusterParameter: boolean;
-  maxParametersAmount: number | undefined;
 };
+
+export type AdvancedScanCache = Partial<AdvancedScanFormValues>;
 
 export function createAdvancedScanFormValues(
   request: AdvancedScanRequest,
@@ -44,13 +37,13 @@ export function createAdvancedScanCache(
 
 export function createAdvancedScanResult(
   values: AdvancedScanFormValues,
-): AdvancedScanResult {
+): AdvancedScanOptions {
   return normalizeAdvancedScanValues(values);
 }
 
 function normalizeAdvancedScanValues(
   values: AdvancedScanFormValues,
-): AdvancedScanResult {
+): AdvancedScanOptions {
   return {
     attackType: values.attackType,
     customValue: values.customValue !== "" ? values.customValue : undefined,

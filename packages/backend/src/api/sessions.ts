@@ -3,36 +3,34 @@ import {
   type CursorPage,
   error,
   ok,
+  projectIdSchema,
   type ProjectSessionSnapshot,
   type SessionEntriesQuery,
   sessionEntriesQuerySchema,
   type SessionEntry,
   type SessionRef,
-  sessionRefSchema,
+  sessionRefsSchema,
 } from "shared";
 
 import { tombstoneRunningSessions } from "../engine/session-manager";
 import { emitSessionChanges } from "../sessions/session-events";
 import { getSessionStore, InvalidCursorError } from "../sessions/session-store";
 import type { BackendSDK } from "../types/types";
-import { getErrorMessage } from "../util/errors";
 
 export async function listSessions(
   _sdk: BackendSDK,
   projectId: string,
 ): Promise<ApiResult<ProjectSessionSnapshot>> {
-  if (typeof projectId !== "string" || projectId.length === 0) {
+  const input = projectIdSchema.safeParse(projectId);
+  if (!input.success) {
     return error("Invalid project ID.", "VALIDATION");
   }
-  try {
-    return ok(await getSessionStore().listSessions(projectId));
-  } catch (cause) {
-    return error(getErrorMessage(cause), "IO");
-  }
+
+  return ok(await getSessionStore().listSessions(input.data));
 }
 
 export async function getSessionEntries(
-  sdk: BackendSDK,
+  _sdk: BackendSDK,
   query: SessionEntriesQuery,
 ): Promise<ApiResult<CursorPage<SessionEntry>>> {
   const parsed = sessionEntriesQuerySchema.safeParse(query);
@@ -41,6 +39,7 @@ export async function getSessionEntries(
       issues: parsed.error.issues.map((issue) => issue.message),
     });
   }
+
   try {
     const page = await getSessionStore().getEntries(parsed.data);
     return page === undefined
@@ -50,7 +49,7 @@ export async function getSessionEntries(
     if (cause instanceof InvalidCursorError) {
       return error(cause.message, "VALIDATION");
     }
-    return error(getErrorMessage(cause), "IO");
+    throw cause;
   }
 }
 
@@ -58,39 +57,30 @@ export async function deleteSessions(
   sdk: BackendSDK,
   refs: SessionRef[],
 ): Promise<ApiResult<void>> {
-  if (!Array.isArray(refs) || refs.length > 10_000) {
+  const input = sessionRefsSchema.safeParse(refs);
+  if (!input.success) {
     return error("Invalid session deletion request.", "VALIDATION");
   }
-  const parsedRefs = refs.map((ref) => sessionRefSchema.safeParse(ref));
-  if (parsedRefs.some((result) => !result.success)) {
-    return error("Invalid session reference.", "VALIDATION");
+
+  const validRefs = input.data;
+
+  const revisions = await getSessionStore().deleteSessions(validRefs);
+  tombstoneRunningSessions(validRefs);
+
+  for (const [projectId, revision] of revisions) {
+    emitSessionChanges(sdk, projectId, revision, [
+      {
+        type: "delete",
+        refs: validRefs.filter((ref) => ref.projectId === projectId),
+      },
+    ]);
   }
-  const validRefs = parsedRefs.flatMap((result) =>
-    result.success ? [result.data] : [],
-  );
-  try {
-    const revisions = await getSessionStore().deleteSessions(validRefs);
-    tombstoneRunningSessions(validRefs);
-    for (const [projectId, revision] of revisions) {
-      emitSessionChanges(sdk, projectId, revision, [
-        {
-          type: "delete",
-          refs: validRefs.filter((ref) => ref.projectId === projectId),
-        },
-      ]);
-    }
-    return ok(undefined);
-  } catch (cause) {
-    return error(getErrorMessage(cause), "IO");
-  }
+
+  return ok(undefined);
 }
 
 export async function getCurrentProjectId(
   _: BackendSDK,
 ): Promise<ApiResult<string | undefined>> {
-  try {
-    return ok(await getSessionStore().getCurrentProjectId());
-  } catch (cause) {
-    return error(getErrorMessage(cause), "INTERNAL");
-  }
+  return ok(await getSessionStore().getCurrentProjectId());
 }

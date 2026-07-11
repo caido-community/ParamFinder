@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { storeToRefs } from "pinia";
 import Button from "primevue/button";
 import { ref } from "vue";
 
@@ -8,6 +9,7 @@ import { useWordlistsStore } from "../stores/store";
 import { useActionResult } from "@/shared/composables/useActionResult";
 
 const wordlistsStore = useWordlistsStore();
+const { mutation } = storeToRefs(wordlistsStore);
 const { showResult } = useActionResult();
 
 const importing = ref<string | undefined>(undefined);
@@ -56,6 +58,7 @@ const importPreset = async (preset: (typeof wordlistPresets)[number]) => {
           severity="secondary"
           outlined
           :loading="importing === preset.name"
+          :disabled="mutation !== undefined"
           @click="importPreset(preset)"
         />
       </div>

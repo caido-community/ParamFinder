@@ -2,8 +2,10 @@ import { describeAnomaly } from "./discovery";
 import type { DiscoveryEvent } from "./events";
 import { EngineState } from "./types";
 import type {
+  AnomalyType,
   EnginePhase,
   EngineRunSummary,
+  EngineRunSummaryBase,
   Finding,
   LoggerLevel,
   RequestContext,
@@ -26,7 +28,7 @@ export interface ScanRequestSummary {
 
 export interface ScanFindingSummary {
   parameter: string;
-  anomalyType: Finding["anomaly"]["type"];
+  anomalyType: AnomalyType;
   anomaly: string;
   context: RequestContext;
   responseStatus: number;
@@ -37,27 +39,17 @@ interface ScanSummaryBase extends ScanProgress {
   findings: ScanFindingSummary[];
 }
 
-export type ScanSummary =
-  | (ScanSummaryBase &
-      Pick<
-        Extract<EngineRunSummary, { state: EngineState.Completed }>,
-        "state" | "phase"
-      >)
-  | (ScanSummaryBase &
-      Pick<
-        Extract<EngineRunSummary, { state: EngineState.Canceled }>,
-        "state" | "phase"
-      >)
-  | (ScanSummaryBase &
-      Pick<
-        Extract<EngineRunSummary, { state: EngineState.Timeout }>,
-        "state" | "phase"
-      >)
-  | (ScanSummaryBase &
-      Pick<
-        Extract<EngineRunSummary, { state: EngineState.Error }>,
-        "state" | "phase" | "failureReason"
-      >);
+export type ScanOutcomeState =
+  | typeof EngineState.Completed
+  | typeof EngineState.Canceled
+  | typeof EngineState.Timeout
+  | typeof EngineState.Error;
+
+type ToScanSummary<T extends EngineRunSummary> = T extends EngineRunSummary
+  ? ScanSummaryBase & Omit<T, keyof EngineRunSummaryBase>
+  : never;
+
+export type ScanSummary = ToScanSummary<EngineRunSummary>;
 
 export type ScanEvent =
   | {
@@ -104,12 +96,10 @@ export interface ScanEventProjection {
   summarizeFinding(finding: Finding): ScanFindingSummary;
 }
 
-interface MutableScanProgress extends ScanProgress {}
-
 export function createScanEventProjection(
   totalParametersAmount: number,
 ): ScanEventProjection {
-  const progress: MutableScanProgress = {
+  const progress: ScanProgress = {
     requestsSent: 0,
     parametersSent: 0,
     findingsCount: 0,
@@ -217,7 +207,7 @@ export function summarizeFinding(finding: Finding): ScanFindingSummary {
 
 function buildSummary(
   result: EngineRunSummary,
-  progress: MutableScanProgress,
+  progress: ScanProgress,
   findings: readonly ScanFindingSummary[],
 ): ScanSummary {
   const baseSummary: ScanSummaryBase = {
@@ -261,7 +251,7 @@ function buildSummary(
   }
 }
 
-function snapshotProgress(progress: MutableScanProgress): ScanProgress {
+function snapshotProgress(progress: ScanProgress): ScanProgress {
   return {
     requestsSent: progress.requestsSent,
     parametersSent: progress.parametersSent,

@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import { storeToRefs } from "pinia";
 import InputNumber from "primevue/inputnumber";
-import { computed } from "vue";
+import type { Settings } from "shared";
 
 import { useSettingsActions } from "../composables/useSettingsActions";
 
@@ -8,13 +9,9 @@ import { useSettingsStore } from "@/features/settings/stores/store";
 
 const settingsStore = useSettingsStore();
 const { updateSettings } = useSettingsActions();
+const { data, saving } = storeToRefs(settingsStore);
 
-const data = computed(() => settingsStore.data);
-
-const setField = <K extends keyof NonNullable<typeof data.value>>(
-  field: K,
-  value: NonNullable<typeof data.value>[K],
-) => {
+const setField = <K extends keyof Settings>(field: K, value: Settings[K]) => {
   void updateSettings({ [field]: value });
 };
 
@@ -43,6 +40,7 @@ const numberPt = {
         <InputNumber
           :model-value="data.delay"
           :min="0"
+          :disabled="saving"
           :pt="numberPt"
           @update:model-value="(value) => setField('delay', value ?? 0)"
         />
@@ -60,6 +58,7 @@ const numberPt = {
         <InputNumber
           :model-value="data.requestTimeoutSeconds"
           :min="1"
+          :disabled="saving"
           :pt="numberPt"
           @update:model-value="
             (value) => setField('requestTimeoutSeconds', value ?? 1)
@@ -79,6 +78,7 @@ const numberPt = {
         <InputNumber
           :model-value="data.scanTimeoutSeconds"
           :min="1"
+          :disabled="saving"
           :pt="numberPt"
           @update:model-value="
             (value) => setField('scanTimeoutSeconds', value ?? undefined)
@@ -97,6 +97,7 @@ const numberPt = {
         <InputNumber
           :model-value="data.learnRequestsCount"
           :min="3"
+          :disabled="saving"
           :pt="numberPt"
           @update:model-value="
             (value) => setField('learnRequestsCount', value ?? 3)

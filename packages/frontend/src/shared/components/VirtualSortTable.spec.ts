@@ -1,9 +1,23 @@
 // @vitest-environment happy-dom
 
 import { mount } from "@vue/test-utils";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import { nextTick } from "vue";
 
 import VirtualSortTable from "./VirtualSortTable.vue";
+
+const virtualizer = vi.hoisted(() => ({
+  getTotalSize: vi.fn(() => 0),
+  getVirtualItems: vi.fn(() => []),
+  measure: vi.fn(),
+}));
+
+vi.mock("@tanstack/vue-virtual", async () => {
+  const { shallowRef } = await import("vue");
+  return {
+    useVirtualizer: () => shallowRef(virtualizer),
+  };
+});
 
 const rows = [
   { requestId: "1", status: 200 },
@@ -11,6 +25,29 @@ const rows = [
 ];
 
 describe("VirtualSortTable DOM behavior", () => {
+  it("remeasures the virtual rows when the list grows", async () => {
+    const wrapper = mount(VirtualSortTable, {
+      props: {
+        rows,
+        columns: [
+          { field: "requestId", label: "ID", width: "80px" },
+          { field: "status", label: "Status", width: "80px" },
+        ],
+        keyField: "requestId",
+        emptyIcon: "fas fa-inbox",
+        emptyMessage: "No requests",
+        serverSide: true,
+      },
+    });
+
+    await wrapper.setProps({
+      rows: [...rows, { requestId: "3", status: 201 }],
+    });
+    await nextTick();
+
+    expect(virtualizer.measure).toHaveBeenCalledOnce();
+  });
+
   it("emits backend sort direction and requests the next page near the end", async () => {
     const wrapper = mount(VirtualSortTable, {
       props: {

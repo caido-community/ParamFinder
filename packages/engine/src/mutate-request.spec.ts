@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { mutateRequest } from "./mutate-request";
+import { mutateRequest, validateMutationTarget } from "./mutate-request";
 import type { EngineRequest } from "./types";
 
 function createRequest(overrides?: Partial<EngineRequest>): EngineRequest {
@@ -306,6 +306,18 @@ describe("mutateRequest", () => {
         updateContentLength: false,
       }),
     ).toThrowError("Unsupported body type for mutation: text");
+  });
+
+  it("validates a mutation target without sending or changing the request", () => {
+    const baseRequest = createRequest();
+
+    expect(() =>
+      validateMutationTarget({
+        baseRequest,
+        attackType: "body",
+      }),
+    ).toThrowError("Unsupported body type for mutation: text");
+    expect(baseRequest).toEqual(createRequest());
   });
 
   it("rejects multipart requests without a boundary", () => {

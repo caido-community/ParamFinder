@@ -14,5 +14,6 @@ export function emitSessionChanges(
     revision,
     changes,
   };
+
   sdk.api.send("paramfinder:session_change", envelope);
 }

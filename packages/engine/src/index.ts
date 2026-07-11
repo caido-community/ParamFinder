@@ -1,11 +1,25 @@
 export {
   createEngineConfig,
+  createRunOptions,
   parseDiscoverInput,
   parseEngineConfig,
   parseEngineRequest,
   parseLearnInput,
   parseRunInput,
 } from "./config";
+export {
+  additionalChecksResultSchema,
+  anomalySchema,
+  anomalyTypeSchema,
+  baselineProfileSchema,
+  engineConfigSchema,
+  engineRequestSchema,
+  engineRequestResponseSchema,
+  engineResponseSchema,
+  headersSchema,
+  parameterSchema,
+  stableFactorsSchema,
+} from "./internal/validation";
 export { createDiscoveryEngine } from "./engine";
 export { EngineError, toEngineError } from "./errors";
 export {
@@ -25,7 +39,18 @@ export {
 } from "./request";
 export { RunControl } from "./run-control";
 export { runDiscoveryScan } from "./scan";
-export { AnomalyType, EnginePhase, EngineState } from "./types";
+export { validateMutationTarget } from "./mutate-request";
+export {
+  AnomalyType,
+  AttackType,
+  ATTACK_TYPES,
+  EnginePhase,
+  EngineState,
+  INSPECTABLE_BODY_KINDS,
+  MUTABLE_BODY_KINDS,
+  PARAMETER_VALUE_TYPES,
+  REQUEST_CONTEXTS,
+} from "./types";
 
 export type { DiscoveryEvent } from "./events";
 export type {
@@ -44,6 +69,7 @@ export type {
   RunDiscoveryScanResult,
   ScanEvent,
   ScanFindingSummary,
+  ScanOutcomeState,
   ScanProgress,
   ScanRequestSummary,
   ScanSummary,
@@ -52,7 +78,6 @@ export { createScanEventProjection } from "./scan-events";
 export type {
   AdditionalChecksResult,
   Anomaly,
-  AttackType,
   BaselineProfile,
   EngineCanceledRunResult,
   EngineCanceledRunSummary,

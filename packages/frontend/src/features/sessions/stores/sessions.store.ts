@@ -6,7 +6,6 @@ import {
   ok,
   type ParamMinerConfig,
   type Request,
-  type RequestResponse,
   type SentRequest,
   type Sequenced,
   type SessionChangeEnvelope,
@@ -15,48 +14,41 @@ import {
   type SessionEntry,
   type SessionEntryKind,
   type SessionEntrySort,
+  type SessionEntryValue,
   type SessionFinding,
   type SessionRef,
 } from "shared";
-import { computed, ref, shallowRef } from "vue";
+import { computed, readonly, ref } from "vue";
 
 import { loadRequestResponse } from "../lib/loadRequestResponse";
 
+import { createEntryCache } from "./sessionEntryCache";
 import {
-  appendEntries,
-  appendPage,
-  createEntryCache,
-  replacePage,
-  type SessionEntryCache,
-} from "./sessionEntryCache";
+  cancelSession,
+  deleteSessions,
+  pauseSession,
+  readCurrentProject,
+  readSessionEntries,
+  readSessionSnapshot,
+  resumeSession,
+  startMining,
+} from "./store.effects";
+import {
+  cacheKey,
+  initialModel,
+  type SessionAction,
+  type SessionRequestsTab,
+  type SessionsModel,
+  type SessionView,
+} from "./store.model";
+import { type SessionsMessage, update as updateModel } from "./store.update";
 
 import { useSDK } from "@/plugins/sdk";
 import { toErrorMessage } from "@/shared/utils/backend";
 
-export type SessionRequestsTab = "requests" | "findings";
-export type SessionAction = "pause" | "resume" | "cancel" | "delete" | "rerun";
-
-export type RequestDetailState = {
-  response?: RequestResponse;
-  error?: string;
-  loading: boolean;
-};
-
-export type SessionView = SessionDescriptor & {
-  id: string;
-  sentRequests: Sequenced<SentRequest>[];
-  findings: Sequenced<SessionFinding>[];
-  logs: string[];
-};
+export type { SessionRequestsTab } from "./store.model";
 
 const PAGE_SIZE = 250;
-const LIVE_ENTRY_SORT = { field: "sequence", direction: "asc" } as const;
-const ENTRY_KINDS: SessionEntryKind[] = ["request", "finding", "log"];
-
-function cacheKey(ref: SessionRef, kind: SessionEntryKind): string {
-  return `${ref.projectId}\u0000${ref.sessionId}\u0000${kind}`;
-}
-
 function entryValues(
   entries: SessionEntry[],
   kind: "request",
@@ -69,7 +61,7 @@ function entryValues(entries: SessionEntry[], kind: "log"): string[];
 function entryValues(
   entries: SessionEntry[],
   kind: SessionEntryKind,
-): Array<SessionEntry["value"] | Sequenced<SentRequest | SessionFinding>> {
+): Array<SessionEntryValue | Sequenced<SentRequest | SessionFinding>> {
   switch (kind) {
     case "request":
       return entries.flatMap((entry) =>
@@ -92,23 +84,35 @@ function entryValues(
 
 export const useSessionsStore = defineStore("sessions", () => {
   const sdk = useSDK();
+  const model = ref<SessionsModel>({
+    ...initialModel,
+    sessions: {},
+    caches: {},
+    actionLoading: {},
+    requestDetails: {},
+  });
 
-  const sessions = shallowRef<Record<string, SessionDescriptor>>({});
-  const caches = shallowRef<Record<string, SessionEntryCache>>({});
-  const currentProjectId = ref<string>();
-  const revision = ref(0);
-  const hydrated = ref(false);
-  const noProjectSelected = ref(false);
-  const activeSessionId = ref<string>();
-  const selectedRequestId = ref<string>();
-  const selectedFindingKey = ref<string>();
-  const requestsTab = ref<SessionRequestsTab>("findings");
-  const actionLoading = ref<Record<string, SessionAction>>({});
-  const requestDetails = shallowRef<Record<string, RequestDetailState>>({});
-  const generation = ref(0);
+  const sessions = computed(() => model.value.sessions);
+  const caches = computed(() => model.value.caches);
+  const currentProjectId = computed(() => model.value.currentProjectId);
+  const revision = computed(() => model.value.revision);
+  const hydrated = computed(() => model.value.hydrated);
+  const noProjectSelected = computed(() => model.value.noProjectSelected);
+  const activeSessionId = computed(() => model.value.activeSessionId);
+  const selectedRequestId = computed(() => model.value.selectedRequestId);
+  const selectedFindingKey = computed(() => model.value.selectedFindingKey);
+  const requestsTab = computed(() => model.value.requestsTab);
+  const actionLoading = computed(() => model.value.actionLoading);
+  const requestDetails = computed(() => model.value.requestDetails);
+  const generation = computed(() => model.value.generation);
+
+  const dispatch = (message: SessionsMessage) => {
+    model.value = updateModel(model.value, message);
+  };
 
   let pendingEnvelopes: SessionChangeEnvelope[] = [];
   let reloadQueued = false;
+  let projectLoadIntent = 0;
 
   const list = computed(() =>
     Object.values(sessions.value).sort(
@@ -159,38 +163,17 @@ export const useSessionsStore = defineStore("sessions", () => {
   };
 
   const replaceDescriptor = (descriptor: SessionDescriptor) => {
-    if (descriptor.ref.projectId !== currentProjectId.value) {
-      return;
-    }
-    sessions.value = {
-      ...sessions.value,
-      [descriptor.ref.sessionId]: descriptor,
-    };
+    dispatch({ type: "UPSERT_DESCRIPTOR", descriptor });
   };
 
   const removeDescriptors = (refs: SessionRef[]) => {
-    const next = { ...sessions.value };
-    let changed = false;
-    for (const ref of refs) {
-      if (
-        ref.projectId === currentProjectId.value &&
-        next[ref.sessionId] !== undefined
-      ) {
-        delete next[ref.sessionId];
-        changed = true;
-      }
-    }
-    if (!changed) {
-      return;
-    }
-    sessions.value = next;
+    const previousActive = activeSessionId.value;
+    dispatch({ type: "REMOVE_DESCRIPTORS", refs });
     if (
-      activeSessionId.value !== undefined &&
-      next[activeSessionId.value] === undefined
+      previousActive !== activeSessionId.value &&
+      activeSessionId.value !== undefined
     ) {
-      activeSessionId.value = Object.keys(next)[0];
-      selectedRequestId.value = undefined;
-      selectedFindingKey.value = undefined;
+      void loadActiveEntries();
     }
   };
 
@@ -206,62 +189,29 @@ export const useSessionsStore = defineStore("sessions", () => {
     }
 
     let refreshTerminal = false;
-    let newSessionId: string | undefined;
-    const cacheUpdates = new Map<string, SessionEntryCache>();
+    let activeDeleted = false;
     for (const change of envelope.changes) {
-      switch (change.type) {
-        case "upsert": {
-          if (sessions.value[change.session.ref.sessionId] === undefined) {
-            newSessionId = change.session.ref.sessionId;
-          }
-          replaceDescriptor(change.session);
-          break;
+      if (change.type === "terminal") {
+        const terminalError = change.error ?? change.session.error;
+        if (terminalError !== undefined) {
+          sdk.window.showToast(terminalError.message, {
+            variant: "error",
+            duration: 10_000,
+          });
         }
-        case "terminal": {
-          replaceDescriptor(change.session);
-          const terminalError = change.error ?? change.session.error;
-          if (terminalError !== undefined) {
-            sdk.window.showToast(terminalError.message, {
-              variant: "error",
-              duration: 10_000,
-            });
-          }
-          refreshTerminal =
-            refreshTerminal ||
-            change.session.ref.sessionId === activeSessionId.value;
-          break;
-        }
-        case "entries": {
-          replaceDescriptor(change.session);
-          const entriesByKind = new Map<SessionEntryKind, SessionEntry[]>();
-          for (const entry of change.entries) {
-            const entries = entriesByKind.get(entry.kind) ?? [];
-            entries.push(entry);
-            entriesByKind.set(entry.kind, entries);
-          }
-          for (const [kind, entries] of entriesByKind) {
-            const key = cacheKey(change.ref, kind);
-            const current = cacheUpdates.get(key) ?? caches.value[key];
-            if (current !== undefined) {
-              cacheUpdates.set(key, appendEntries(current, entries));
-            }
-          }
-          break;
-        }
-        case "delete":
-          removeDescriptors(change.refs);
-          break;
+        refreshTerminal =
+          refreshTerminal ||
+          change.session.ref.sessionId === activeSessionId.value;
+      }
+      if (change.type === "delete") {
+        activeDeleted = change.refs.some(
+          (ref) => ref.sessionId === activeSessionId.value,
+        );
       }
     }
-    if (cacheUpdates.size > 0) {
-      caches.value = {
-        ...caches.value,
-        ...Object.fromEntries(cacheUpdates),
-      };
-    }
-    revision.value = envelope.revision;
-    if (newSessionId !== undefined) {
-      setActiveSession(newSessionId, { loadEntries: false });
+    dispatch({ type: "APPLY_ENVELOPE", envelope });
+    if (activeDeleted && activeSessionId.value !== undefined) {
+      void loadActiveEntries();
     }
     if (refreshTerminal) {
       void refreshStaleEntries();
@@ -295,64 +245,51 @@ export const useSessionsStore = defineStore("sessions", () => {
 
   const hydrateProject = async (
     projectId: string | undefined,
+    retryBufferedFailure = false,
   ): Promise<ApiResult<void>> => {
-    const token = ++generation.value;
-    const projectChanged = projectId !== currentProjectId.value;
     const previousActiveSessionId = activeSessionId.value;
-    currentProjectId.value = projectId;
-    hydrated.value = false;
-    noProjectSelected.value = projectId === undefined;
-    if (projectChanged) {
-      sessions.value = {};
-      caches.value = {};
-      activeSessionId.value = undefined;
-      selectedRequestId.value = undefined;
-      selectedFindingKey.value = undefined;
-      actionLoading.value = {};
-      requestDetails.value = {};
-    }
-    if (projectChanged) {
-      revision.value = 0;
-    }
+    dispatch({ type: "PROJECT_LOAD_STARTED", projectId });
+    const token = generation.value;
     pendingEnvelopes = pendingEnvelopes.filter(
       (envelope) => envelope.projectId === projectId,
     );
 
     if (projectId === undefined) {
-      hydrated.value = true;
+      dispatch({ type: "PROJECT_LOAD_FINISHED", generation: token });
       return ok(undefined);
     }
 
     try {
-      const result = await sdk.backend.listSessions(projectId);
+      const result = await readSessionSnapshot(sdk, projectId);
       if (token !== generation.value || projectId !== currentProjectId.value) {
         return ok(undefined);
       }
       if (!result.success) {
-        hydrated.value = true;
+        dispatch({ type: "PROJECT_LOAD_FINISHED", generation: token });
+        if (
+          retryBufferedFailure &&
+          pendingEnvelopes.some(
+            (envelope) => envelope.projectId === currentProjectId.value,
+          )
+        ) {
+          queueReload();
+        }
         return result;
       }
       if (result.value.projectId !== projectId) {
-        hydrated.value = true;
+        dispatch({ type: "PROJECT_LOAD_FINISHED", generation: token });
         return error(
           "Session snapshot belongs to a stale project.",
           "CONFLICT",
         );
       }
 
-      sessions.value = Object.fromEntries(
-        result.value.sessions.map((session) => [
-          session.ref.sessionId,
-          session,
-        ]),
-      );
-      revision.value = result.value.revision;
-      activeSessionId.value =
-        previousActiveSessionId !== undefined &&
-        sessions.value[previousActiveSessionId] !== undefined
-          ? previousActiveSessionId
-          : result.value.sessions[0]?.ref.sessionId;
-      hydrated.value = true;
+      dispatch({
+        type: "PROJECT_LOAD_SUCCESS",
+        generation: token,
+        snapshot: result.value,
+        previousActiveSessionId,
+      });
 
       const buffered = pendingEnvelopes
         .filter((envelope) => envelope.revision > revision.value)
@@ -367,23 +304,27 @@ export const useSessionsStore = defineStore("sessions", () => {
       await loadActiveEntries();
       return ok(undefined);
     } catch (err: unknown) {
-      if (token === generation.value) {
-        hydrated.value = true;
-      }
+      dispatch({ type: "PROJECT_LOAD_FINISHED", generation: token });
       return error(toErrorMessage(err));
     }
   };
 
   const initialize = async (): Promise<ApiResult<void>> => {
-    const result = await sdk.backend.getCurrentProjectId();
+    const intent = ++projectLoadIntent;
+    const result = await readCurrentProject(sdk);
     if (!result.success) {
       return result;
     }
-    return hydrateProject(result.value);
+    if (intent !== projectLoadIntent) {
+      return ok(undefined);
+    }
+    return hydrateProject(result.value, true);
   };
 
-  const reloadForProject = (projectId: string | undefined) =>
-    hydrateProject(projectId);
+  const reloadForProject = (projectId: string | undefined) => {
+    projectLoadIntent++;
+    return hydrateProject(projectId, true);
+  };
 
   const getRequestDetailState = (requestId: string | undefined) =>
     requestId === undefined ? undefined : requestDetails.value[requestId];
@@ -396,10 +337,7 @@ export const useSessionsStore = defineStore("sessions", () => {
 
     const token = generation.value;
     const sessionId = descriptor.ref.sessionId;
-    requestDetails.value = {
-      ...requestDetails.value,
-      [requestId]: { loading: true },
-    };
+    dispatch({ type: "REQUEST_DETAIL_STARTED", requestId });
 
     try {
       const result = await loadRequestResponse(sdk, requestId);
@@ -410,22 +348,30 @@ export const useSessionsStore = defineStore("sessions", () => {
       ) {
         return;
       }
-      requestDetails.value = {
-        ...requestDetails.value,
-        [requestId]: result.success
-          ? { loading: false, response: result.value }
-          : { loading: false, error: result.error.message },
-      };
+      dispatch(
+        result.success
+          ? {
+              type: "REQUEST_DETAIL_SUCCEEDED",
+              requestId,
+              response: result.value,
+            }
+          : {
+              type: "REQUEST_DETAIL_FAILED",
+              requestId,
+              error: result.error.message,
+            },
+      );
     } catch (err: unknown) {
       if (
         token === generation.value &&
         activeSessionId.value === sessionId &&
         selectedRequestId.value === requestId
       ) {
-        requestDetails.value = {
-          ...requestDetails.value,
-          [requestId]: { loading: false, error: toErrorMessage(err) },
-        };
+        dispatch({
+          type: "REQUEST_DETAIL_FAILED",
+          requestId,
+          error: toErrorMessage(err),
+        });
       }
     }
   };
@@ -462,10 +408,10 @@ export const useSessionsStore = defineStore("sessions", () => {
       error: undefined,
       requestId: (previous?.requestId ?? 0) + 1,
     };
-    caches.value = { ...caches.value, [key]: loading };
+    dispatch({ type: "ENTRY_LOAD_STARTED", key, cache: loading });
 
     try {
-      const result = await sdk.backend.getSessionEntries({
+      const result = await readSessionEntries(sdk, {
         ref: descriptor.ref,
         kind,
         cursor: current?.nextCursor,
@@ -482,34 +428,25 @@ export const useSessionsStore = defineStore("sessions", () => {
         return ok(undefined);
       }
       if (!result.success) {
-        const latest = caches.value[key];
-        if (latest === undefined) {
-          return result;
-        }
-        caches.value = {
-          ...caches.value,
-          [key]: {
-            ...latest,
-            loading: false,
-            error: result.error.message,
-          },
-        };
+        dispatch({
+          type: "ENTRY_LOAD_FAILED",
+          key,
+          requestId: loading.requestId,
+          error: result.error.message,
+        });
         sdk.window.showToast(
           `Failed to load session ${kind} entries: ${result.error.message}`,
           { variant: "error", duration: 10_000 },
         );
         return result;
       }
-      const latest = caches.value[key];
-      if (latest === undefined) {
-        return ok(undefined);
-      }
-      caches.value = {
-        ...caches.value,
-        [key]: shouldReset
-          ? replacePage(latest, result.value)
-          : appendPage(latest, result.value),
-      };
+      dispatch({
+        type: "ENTRY_LOAD_SUCCEEDED",
+        key,
+        requestId: loading.requestId,
+        page: result.value,
+        replace: shouldReset,
+      });
       return ok(undefined);
     } catch (err: unknown) {
       const message = toErrorMessage(err);
@@ -519,14 +456,12 @@ export const useSessionsStore = defineStore("sessions", () => {
         activeSessionId.value === descriptor.ref.sessionId &&
         caches.value[key]?.requestId === loading.requestId
       ) {
-        const latest = caches.value[key];
-        if (latest === undefined) {
-          return error(message);
-        }
-        caches.value = {
-          ...caches.value,
-          [key]: { ...latest, loading: false, error: message },
-        };
+        dispatch({
+          type: "ENTRY_LOAD_FAILED",
+          key,
+          requestId: loading.requestId,
+          error: message,
+        });
         sdk.window.showToast(
           `Failed to load session ${kind} entries: ${message}`,
           { variant: "error", duration: 10_000 },
@@ -578,14 +513,14 @@ export const useSessionsStore = defineStore("sessions", () => {
   async function exportEntries(kind: "log"): Promise<ApiResult<string[]>>;
   async function exportEntries(
     kind: SessionEntryKind,
-  ): Promise<ApiResult<Array<SessionEntry["value"]>>> {
+  ): Promise<ApiResult<SessionEntryValue[]>> {
     const descriptor = activeDescriptor.value;
     if (descriptor === undefined) {
       return ok([]);
     }
     const token = generation.value;
     const sessionId = descriptor.ref.sessionId;
-    const values: Array<SessionEntry["value"]> = [];
+    const values: SessionEntryValue[] = [];
     let cursor: string | undefined;
     do {
       const query: SessionEntriesQuery = {
@@ -595,7 +530,7 @@ export const useSessionsStore = defineStore("sessions", () => {
         limit: 1_000,
         sort: { field: "sequence", direction: "asc" },
       };
-      const result = await sdk.backend.getSessionEntries(query);
+      const result = await readSessionEntries(sdk, query);
       if (token !== generation.value || activeSessionId.value !== sessionId) {
         return error(
           "The active project or session changed during export.",
@@ -625,26 +560,11 @@ export const useSessionsStore = defineStore("sessions", () => {
     id: string | undefined,
     options: { loadEntries?: boolean } = {},
   ) => {
-    activeSessionId.value = id;
-    selectedRequestId.value = undefined;
-    selectedFindingKey.value = undefined;
-    requestDetails.value = {};
-    const descriptor = id === undefined ? undefined : sessions.value[id];
-    if (descriptor !== undefined) {
-      const prefix = `${descriptor.ref.projectId}\u0000${descriptor.ref.sessionId}\u0000`;
-      const retained = Object.fromEntries(
-        Object.entries(caches.value).filter(([key]) => key.startsWith(prefix)),
-      );
-      if (options.loadEntries === false) {
-        for (const kind of ENTRY_KINDS) {
-          const key = cacheKey(descriptor.ref, kind);
-          retained[key] ??= createEntryCache(LIVE_ENTRY_SORT);
-        }
-      }
-      caches.value = retained;
-    } else {
-      caches.value = {};
-    }
+    dispatch({
+      type: "SET_ACTIVE_SESSION",
+      id,
+      initializeEntries: options.loadEntries === false,
+    });
     if (options.loadEntries !== false) {
       void loadActiveEntries();
     }
@@ -663,19 +583,15 @@ export const useSessionsStore = defineStore("sessions", () => {
   };
 
   const setSelectedRequest = (id: string | undefined) => {
-    selectedRequestId.value = id;
-    selectedFindingKey.value = undefined;
-    requestDetails.value = {};
+    dispatch({ type: "SELECT_REQUEST", id });
   };
 
   const setSelectedFinding = (requestId: string, findingKey: string) => {
-    selectedRequestId.value = requestId;
-    selectedFindingKey.value = findingKey;
-    requestDetails.value = {};
+    dispatch({ type: "SELECT_FINDING", requestId, findingKey });
   };
 
   const setRequestsTab = (tab: SessionRequestsTab) => {
-    requestsTab.value = tab;
+    dispatch({ type: "SET_REQUESTS_TAB", tab });
   };
 
   const openFinding = (requestId: string, findingKey: string) => {
@@ -701,24 +617,27 @@ export const useSessionsStore = defineStore("sessions", () => {
         "CONFLICT",
       );
     }
-    actionLoading.value = { ...actionLoading.value, [id]: action };
+    dispatch({ type: "ACTION_STARTED", sessionId: id, action });
     try {
       const result = await request(descriptor.ref);
       return result.success ? ok(undefined) : result;
     } catch (err: unknown) {
       return error(toErrorMessage(err));
     } finally {
-      if (token === generation.value && actionLoading.value[id] === action) {
-        const next = { ...actionLoading.value };
-        delete next[id];
-        actionLoading.value = next;
-      }
+      dispatch({
+        type: "ACTION_FINISHED",
+        sessionId: id,
+        action,
+        generation: token,
+      });
     }
   };
 
-  const pauseActive = () => runAction("pause", sdk.backend.pauseSession);
-  const resumeActive = () => runAction("resume", sdk.backend.resumeSession);
-  const cancelActive = () => runAction("cancel", sdk.backend.cancelSession);
+  const pauseActive = () => runAction("pause", (ref) => pauseSession(sdk, ref));
+  const resumeActive = () =>
+    runAction("resume", (ref) => resumeSession(sdk, ref));
+  const cancelActive = () =>
+    runAction("cancel", (ref) => cancelSession(sdk, ref));
 
   const rerunActive = async (): Promise<ApiResult<void>> => {
     const descriptor = activeDescriptor.value;
@@ -727,7 +646,8 @@ export const useSessionsStore = defineStore("sessions", () => {
       return error("This session cannot be rerun.", "VALIDATION");
     }
     return runAction("rerun", async () => {
-      const result = await sdk.backend.startMining(
+      const result = await startMining(
+        sdk,
         descriptor.rerun!.targetRequest,
         descriptor.rerun!.config,
       );
@@ -750,7 +670,7 @@ export const useSessionsStore = defineStore("sessions", () => {
   ): Promise<ApiResult<SessionDescriptor>> => {
     const token = generation.value;
     try {
-      const result = await sdk.backend.startMining(request, config);
+      const result = await startMining(sdk, request, config);
       if (!result.success) {
         return result;
       }
@@ -772,7 +692,7 @@ export const useSessionsStore = defineStore("sessions", () => {
     if (descriptor === undefined) {
       return ok(undefined);
     }
-    const result = await sdk.backend.deleteSessions([descriptor.ref]);
+    const result = await deleteSessions(sdk, [descriptor.ref]);
     if (result.success) {
       if (token === generation.value) {
         removeDescriptors([descriptor.ref]);
@@ -792,7 +712,7 @@ export const useSessionsStore = defineStore("sessions", () => {
     if (refs.length === 0) {
       return ok(undefined);
     }
-    const result = await sdk.backend.deleteSessions(refs);
+    const result = await deleteSessions(sdk, refs);
     if (result.success) {
       if (token === generation.value) {
         removeDescriptors(refs);
@@ -804,12 +724,14 @@ export const useSessionsStore = defineStore("sessions", () => {
   };
 
   return {
+    state: readonly(model),
     activeSessionId,
     selectedRequestId,
     selectedFindingKey,
     requestsTab,
     activeActionLoading,
     noProjectSelected,
+    hydrated,
     currentProjectId,
     list,
     activeSession,

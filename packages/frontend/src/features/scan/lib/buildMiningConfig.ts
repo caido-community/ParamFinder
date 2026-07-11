@@ -5,12 +5,9 @@ import {
   settingsToParamMinerConfig,
 } from "shared";
 
-export type AdvancedScanOptions = {
-  customValue?: string;
-  jsonBodyPath?: string;
-  cacheBusterParameter?: boolean;
-  maxParametersAmount?: number;
-};
+import type { AdvancedScanOptions as ScanOptions } from "../stores/scanDialog";
+
+export type AdvancedScanOptions = Omit<ScanOptions, "attackType">;
 
 export function buildMiningConfig(
   settings: Settings,

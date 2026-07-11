@@ -5,6 +5,18 @@ import type { BackendSDK } from "../types/types";
 import { getRequest } from "./requests";
 
 describe("getRequest", () => {
+  it("rejects an empty request ID before calling Caido", async () => {
+    const sdk = {
+      requests: { get: vi.fn() },
+    } as unknown as BackendSDK;
+
+    await expect(getRequest(sdk, "")).resolves.toMatchObject({
+      success: false,
+      error: { code: "VALIDATION" },
+    });
+    expect(sdk.requests.get).not.toHaveBeenCalled();
+  });
+
   it("uses Caido's structured request fields while parsing raw headers", async () => {
     const spec = {
       getTls: () => true,
