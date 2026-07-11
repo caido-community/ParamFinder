@@ -1,4 +1,4 @@
-import type { SessionFinding } from "shared";
+import type { Sequenced, SessionFinding } from "shared";
 import { computed } from "vue";
 
 import { getFindingKey } from "@/features/sessions/lib/sessionRows";
@@ -70,8 +70,8 @@ export function useResults() {
 
   const loadMore = () => void store.loadEntries("finding");
 
-  const openFinding = (finding: SessionFinding, index: number) => {
-    store.openFinding(finding.requestId, getFindingKey(finding, index));
+  const openFinding = (finding: Sequenced<SessionFinding>) => {
+    store.openFinding(finding.requestId, getFindingKey(finding));
   };
 
   return {

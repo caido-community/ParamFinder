@@ -39,20 +39,16 @@ export function createAdvancedScanFormValues(
 export function createAdvancedScanCache(
   values: AdvancedScanFormValues,
 ): AdvancedScanCache {
-  return {
-    attackType: values.attackType,
-    customValue: values.customValue !== "" ? values.customValue : undefined,
-    jsonBodyPath:
-      values.attackType === "body" && values.jsonBodyPath !== ""
-        ? values.jsonBodyPath
-        : undefined,
-    cacheBusterParameter:
-      values.attackType === "headers" ? values.cacheBusterParameter : undefined,
-    maxParametersAmount: values.maxParametersAmount,
-  };
+  return normalizeAdvancedScanValues(values);
 }
 
 export function createAdvancedScanResult(
+  values: AdvancedScanFormValues,
+): AdvancedScanResult {
+  return normalizeAdvancedScanValues(values);
+}
+
+function normalizeAdvancedScanValues(
   values: AdvancedScanFormValues,
 ): AdvancedScanResult {
   return {

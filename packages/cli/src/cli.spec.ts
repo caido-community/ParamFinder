@@ -173,7 +173,7 @@ describe("paramfinder CLI", () => {
     ]);
 
     expect(result.code).toBe(0);
-    expect(result.stderr).toContain("Rate limited, pausing discovery");
+    expect(result.stderr).toContain("Rate limited, pausing the run");
     expect(result.stderr).toContain("Scan complete");
   });
 

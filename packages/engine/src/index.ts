@@ -18,6 +18,7 @@ export {
 export type { JsonBodyPathSegment } from "./json-body-path";
 export {
   canSendRequestBody,
+  createHeaderMap,
   createEngineRequest,
   createEngineRequestFromRaw,
   createEngineRequestHeaders,
@@ -36,6 +37,7 @@ export type {
   CreateEngineRequestHeadersInput,
   CreateEngineRequestInput,
   CreateEngineRequestFromRawInput,
+  HeaderInput,
 } from "./request";
 export type {
   RunDiscoveryScanOptions,

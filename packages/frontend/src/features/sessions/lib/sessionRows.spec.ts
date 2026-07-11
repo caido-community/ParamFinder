@@ -1,4 +1,9 @@
-import { AnomalyType, type SentRequest, type SessionFinding } from "shared";
+import {
+  AnomalyType,
+  type SentRequest,
+  type Sequenced,
+  type SessionFinding,
+} from "shared";
 import { describe, expect, it } from "vitest";
 
 import {
@@ -9,8 +14,8 @@ import {
 
 function createSession(
   overrides: {
-    findings?: SessionFinding[];
-    sentRequests?: SentRequest[];
+    findings?: Sequenced<SessionFinding>[];
+    sentRequests?: Sequenced<SentRequest>[];
   } = {},
 ) {
   return { findings: [], sentRequests: [], ...overrides };
@@ -27,6 +32,7 @@ describe("sessionRows", () => {
       createSession({
         sentRequests: [
           {
+            sequence: 10,
             requestId: "request-1",
             responseStatus: 200,
             responseTime: 12,
@@ -56,6 +62,7 @@ describe("sessionRows", () => {
       createSession({
         sentRequests: [
           {
+            sequence: 11,
             requestId: "request-1",
             responseStatus: 200,
             responseTime: 1,
@@ -75,6 +82,7 @@ describe("sessionRows", () => {
       createSession({
         findings: [
           {
+            sequence: 41,
             requestId: "request-1",
             responseStatus: 200,
             responseLength: 10,
@@ -82,6 +90,7 @@ describe("sessionRows", () => {
             anomaly: { type: AnomalyType.StatusCode, from: 200, to: 404 },
           },
           {
+            sequence: 99,
             requestId: "request-2",
             responseStatus: 500,
             responseLength: 20,
@@ -93,14 +102,15 @@ describe("sessionRows", () => {
     );
 
     expect(rows).toHaveLength(2);
-    expect(rows[0]?.key).toBe("id-0");
-    expect(rows[1]?.key).toBe("id-1");
+    expect(rows[0]?.key).toBe("41");
+    expect(rows[1]?.key).toBe("99");
     expect(rows[0]?.parameter).toBe("id");
     expect(rows[0]?.anomaly).toBe(AnomalyType.StatusCode);
   });
 
-  it("derives a finding key from parameter name and index", () => {
-    const finding: SessionFinding = {
+  it("derives a stable finding key from its persisted sequence", () => {
+    const finding: Sequenced<SessionFinding> = {
+      sequence: 72,
       requestId: "request-1",
       responseStatus: 200,
       responseLength: 10,
@@ -108,6 +118,6 @@ describe("sessionRows", () => {
       anomaly: { type: AnomalyType.StatusCode, from: 200, to: 404 },
     };
 
-    expect(getFindingKey(finding, 2)).toBe("token-2");
+    expect(getFindingKey(finding)).toBe("72");
   });
 });

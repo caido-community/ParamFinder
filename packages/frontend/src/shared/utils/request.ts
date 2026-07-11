@@ -79,7 +79,6 @@ export function createRequestFromSelection(
 ): Request {
   return createEngineRequestFromRaw({
     raw: selection.raw,
-    id: generateID(),
     host: selection.host,
     port: selection.port,
     tls: selection.isTls,
@@ -87,8 +86,4 @@ export function createRequestFromSelection(
     query: selection.query,
     context: "discovery",
   });
-}
-
-export function generateID(): string {
-  return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
 }

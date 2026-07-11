@@ -1,6 +1,24 @@
 import { describe, expect, it } from "vitest";
 
-import { createEngineRequest, createEngineRequestFromRaw } from "./request";
+import {
+  createEngineRequest,
+  createEngineRequestFromRaw,
+  createHeaderMap,
+} from "./request";
+
+describe("createHeaderMap", () => {
+  it("converts Fetch headers into the engine header representation", () => {
+    const headers = new Headers();
+    headers.append("X-Test", "one");
+    headers.append("x-test", "two");
+    headers.set("Content-Type", "text/plain");
+
+    expect(createHeaderMap(headers)).toEqual({
+      "content-type": ["text/plain"],
+      "x-test": ["one, two"],
+    });
+  });
+});
 
 describe("createEngineRequest", () => {
   it("derives request fields from a URL and body", () => {

@@ -1,4 +1,3 @@
-import { parseDiscoverInput } from "../config";
 import {
   detectAnomaly,
   detectReflectionCountAnomalies,
@@ -58,7 +57,7 @@ export function createDiscoveryWorkflows(
     await runtimeContext.waitForCheckpoint(args.runOptions);
     runtimeContext.emit(args.runOptions, {
       type: "log",
-      level: "debug",
+      level: "info",
       message: `Verifying candidate parameter "${args.parameter.name}": ${describeAnomalyReason(args.anomaly)} (${describeAnomaly(args.anomaly)})`,
     });
     const verified = await parameterChunkVerifier.verifyParameterChunk({
@@ -166,9 +165,8 @@ export function createDiscoveryWorkflows(
   };
 
   const performDiscovery = async (
-    input: EngineDiscoverInput,
+    parsed: EngineDiscoverInput,
   ): Promise<EngineDiscoverResult> => {
-    const parsed = parseDiscoverInput(input);
     runtimeContext.setKnownWafResponse(parsed.profile.wafResponse);
     const sanitizedWords = sanitizeWords(parsed.words);
     const findings: Finding[] = [];

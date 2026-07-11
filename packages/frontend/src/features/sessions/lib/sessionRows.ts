@@ -1,4 +1,4 @@
-import type { SentRequest, SessionFinding } from "shared";
+import type { SentRequest, Sequenced, SessionFinding } from "shared";
 
 import type { VirtualSortRow } from "@/shared/components/virtualSortTable";
 
@@ -20,12 +20,12 @@ export type FindingRow = VirtualSortRow & {
   length: number;
 };
 
-export function getFindingKey(finding: SessionFinding, index: number): string {
-  return `${finding.parameter.name}-${index}`;
+export function getFindingKey(finding: Sequenced<SessionFinding>): string {
+  return String(finding.sequence);
 }
 
 export function createRequestRows(
-  session: { sentRequests: SentRequest[] } | undefined,
+  session: { sentRequests: Sequenced<SentRequest>[] } | undefined,
 ): RequestRow[] {
   if (session === undefined) {
     return [];
@@ -42,14 +42,14 @@ export function createRequestRows(
 }
 
 export function createFindingRows(
-  session: { findings: SessionFinding[] } | undefined,
+  session: { findings: Sequenced<SessionFinding>[] } | undefined,
 ): FindingRow[] {
   if (session === undefined) {
     return [];
   }
 
-  return session.findings.map((finding, index) => ({
-    key: getFindingKey(finding, index),
+  return session.findings.map((finding) => ({
+    key: getFindingKey(finding),
     requestId: finding.requestId,
     parameter: finding.parameter.name,
     anomaly: finding.anomaly.type,

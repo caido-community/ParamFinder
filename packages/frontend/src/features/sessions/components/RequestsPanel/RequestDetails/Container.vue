@@ -12,7 +12,8 @@ import { fullHeightCardPt } from "@/shared/utils/cardPt";
 
 defineOptions({ name: "RequestDetails" });
 
-const { requestResponse, errorMessage, selectedRequestId } = useRequestDetails();
+const { requestResponse, errorMessage, selectedRequestId } =
+  useRequestDetails();
 
 const requestRaw = computed(() => requestResponse.value?.request.raw ?? "");
 const responseRaw = computed(() => requestResponse.value?.response.raw ?? "");

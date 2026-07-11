@@ -9,6 +9,7 @@ import {
 
 import { getSettingsStore, SettingsConflictError } from "../settings/settings";
 import type { BackendSDK } from "../types/types";
+import { getErrorMessage } from "../util/errors";
 
 export async function getSettings(
   _: BackendSDK,
@@ -16,7 +17,7 @@ export async function getSettings(
   try {
     return ok(await getSettingsStore().getSettings());
   } catch (cause) {
-    return error(cause instanceof Error ? cause.message : String(cause), "IO");
+    return error(getErrorMessage(cause), "IO");
   }
 }
 
@@ -42,7 +43,7 @@ export async function patchSettings(
       return error(cause.message, "CONFLICT");
     }
     if (cause instanceof TypeError) return error(cause.message, "VALIDATION");
-    return error(cause instanceof Error ? cause.message : String(cause), "IO");
+    return error(getErrorMessage(cause), "IO");
   }
 }
 

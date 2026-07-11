@@ -4,7 +4,6 @@ import {
   error,
   ok,
   type ProjectSessionSnapshot,
-  type SessionChangeEnvelope,
   type SessionEntriesQuery,
   sessionEntriesQuerySchema,
   type SessionEntry,
@@ -13,8 +12,10 @@ import {
 } from "shared";
 
 import { tombstoneRunningSessions } from "../engine/session-manager";
+import { emitSessionChanges } from "../sessions/session-events";
 import { getSessionStore, InvalidCursorError } from "../sessions/session-store";
 import type { BackendSDK } from "../types/types";
+import { getErrorMessage } from "../util/errors";
 
 export async function listSessions(
   _sdk: BackendSDK,
@@ -26,7 +27,7 @@ export async function listSessions(
   try {
     return ok(await getSessionStore().listSessions(projectId));
   } catch (cause) {
-    return error(cause instanceof Error ? cause.message : String(cause), "IO");
+    return error(getErrorMessage(cause), "IO");
   }
 }
 
@@ -49,7 +50,7 @@ export async function getSessionEntries(
     if (cause instanceof InvalidCursorError) {
       return error(cause.message, "VALIDATION");
     }
-    return error(cause instanceof Error ? cause.message : String(cause), "IO");
+    return error(getErrorMessage(cause), "IO");
   }
 }
 
@@ -71,22 +72,16 @@ export async function deleteSessions(
     const revisions = await getSessionStore().deleteSessions(validRefs);
     tombstoneRunningSessions(validRefs);
     for (const [projectId, revision] of revisions) {
-      const envelope: SessionChangeEnvelope = {
-        version: 1,
-        projectId,
-        revision,
-        changes: [
-          {
-            type: "delete",
-            refs: validRefs.filter((ref) => ref.projectId === projectId),
-          },
-        ],
-      };
-      sdk.api.send("paramfinder:session_change", envelope);
+      emitSessionChanges(sdk, projectId, revision, [
+        {
+          type: "delete",
+          refs: validRefs.filter((ref) => ref.projectId === projectId),
+        },
+      ]);
     }
     return ok(undefined);
   } catch (cause) {
-    return error(cause instanceof Error ? cause.message : String(cause), "IO");
+    return error(getErrorMessage(cause), "IO");
   }
 }
 
@@ -96,9 +91,6 @@ export async function getCurrentProjectId(
   try {
     return ok(await getSessionStore().getCurrentProjectId());
   } catch (cause) {
-    return error(
-      cause instanceof Error ? cause.message : String(cause),
-      "INTERNAL",
-    );
+    return error(getErrorMessage(cause), "INTERNAL");
   }
 }

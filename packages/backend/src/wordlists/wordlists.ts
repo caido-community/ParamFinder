@@ -1,5 +1,5 @@
 import { Buffer } from "buffer";
-import { access, mkdir, readFile, rename, rm, writeFile } from "fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "fs/promises";
 import path from "path";
 
 import {
@@ -10,7 +10,11 @@ import {
 } from "shared";
 
 import type { BackendSDK } from "../types/types";
+import { writeFileAtomically } from "../util/atomic-file";
+import { getErrorMessage } from "../util/errors";
+import { pathExists } from "../util/filesystem";
 import { generateID } from "../util/helper";
+import { SerialTaskQueue } from "../util/serial-task-queue";
 
 const MAX_WORDLIST_BYTES = 10 * 1024 * 1024;
 const MANIFEST_VERSION = 1;
@@ -24,14 +28,15 @@ type WordlistManifest = {
   wordlists: StoredWordlist[];
 };
 
+export class WordlistNotFoundError extends Error {}
+
 export class WordlistManager {
   private wordlists: StoredWordlist[] = [];
-  private operationQueue: Promise<void>;
+  private readonly operationQueue = new SerialTaskQueue();
   readonly ready: Promise<void>;
 
   constructor(private readonly sdk: BackendSDK) {
     this.ready = this.initialize();
-    this.operationQueue = this.ready;
   }
 
   async importWordlist(data: string, filename: string): Promise<Wordlist> {
@@ -65,7 +70,7 @@ export class WordlistManager {
           ...wordlist,
           enabled: false,
           status: "disabled",
-          error: errorMessage(cause),
+          error: getErrorMessage(cause),
         });
         throw cause;
       }
@@ -152,11 +157,11 @@ export class WordlistManager {
   private async recoverInterruptedManifestWrite(): Promise<void> {
     const manifestPath = this.manifestPath();
     const temporaryPath = this.temporaryManifestPath();
-    if (await exists(manifestPath)) {
+    if (await pathExists(manifestPath)) {
       await rm(temporaryPath, { force: true }).catch(() => undefined);
       return;
     }
-    if (!(await exists(temporaryPath))) return;
+    if (!(await pathExists(temporaryPath))) return;
 
     try {
       parseManifest(String(await readFile(temporaryPath)));
@@ -167,7 +172,7 @@ export class WordlistManager {
   }
 
   private async loadManifest(): Promise<StoredWordlist[]> {
-    if (!(await exists(this.manifestPath()))) return [];
+    if (!(await pathExists(this.manifestPath()))) return [];
     const contents = String(await readFile(this.manifestPath()));
     try {
       return parseManifest(contents).wordlists;
@@ -175,7 +180,7 @@ export class WordlistManager {
       const quarantinePath = `${this.manifestPath()}.quarantine-${Date.now()}`;
       await rename(this.manifestPath(), quarantinePath);
       this.sdk.console.error(
-        `[WORDLISTS] Invalid metadata moved to ${quarantinePath}: ${errorMessage(cause)}`,
+        `[WORDLISTS] Invalid metadata moved to ${quarantinePath}: ${getErrorMessage(cause)}`,
       );
       return [];
     }
@@ -195,7 +200,7 @@ export class WordlistManager {
         continue;
       }
 
-      const fileExists = await exists(filePath);
+      const fileExists = await pathExists(filePath);
       if (wordlist.status === "pending" && fileExists) {
         reconciled.push({ ...wordlist, status: "active", error: undefined });
         changed = true;
@@ -223,7 +228,8 @@ export class WordlistManager {
   ): Promise<void> {
     return this.serialized(async () => {
       const wordlist = this.find(id);
-      if (wordlist === undefined) throw new Error("Wordlist not found.");
+      if (wordlist === undefined)
+        throw new WordlistNotFoundError("Wordlist not found.");
       await this.replace(change(wordlist));
     });
   }
@@ -245,15 +251,12 @@ export class WordlistManager {
       version: MANIFEST_VERSION,
       wordlists,
     };
-    const temporaryPath = this.temporaryManifestPath();
-    try {
-      await writeFile(temporaryPath, JSON.stringify(manifest));
-      await rename(temporaryPath, this.manifestPath());
-      this.wordlists = wordlists;
-    } catch (cause) {
-      await rm(temporaryPath, { force: true }).catch(() => undefined);
-      throw cause;
-    }
+    await writeFileAtomically(this.manifestPath(), JSON.stringify(manifest), {
+      writeFile,
+      replaceFile: rename,
+      removeFile: async (filePath) => rm(filePath, { force: true }),
+    });
+    this.wordlists = wordlists;
   }
 
   private wordlistPath(wordlist: StoredWordlist): string {
@@ -280,12 +283,7 @@ export class WordlistManager {
       await this.ready;
       return operation();
     };
-    const result = this.operationQueue.then(execute, execute);
-    this.operationQueue = result.then(
-      () => undefined,
-      () => undefined,
-    );
-    return result;
+    return this.operationQueue.run(execute);
   }
 }
 
@@ -346,17 +344,4 @@ function detach(wordlist: Wordlist): Wordlist {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function errorMessage(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause);
-}
-
-async function exists(filePath: string): Promise<boolean> {
-  try {
-    await access(filePath);
-    return true;
-  } catch {
-    return false;
-  }
 }

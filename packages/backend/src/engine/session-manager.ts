@@ -14,16 +14,16 @@ import {
   type ParamMinerConfig,
   type Request,
   type SentRequest,
-  type SessionChange,
-  type SessionChangeEnvelope,
   type SessionDescriptor,
   type SessionEntryInput,
   type SessionFinding,
   type SessionRef,
 } from "shared";
 
+import { emitSessionChanges } from "../sessions/session-events";
 import { getSessionStore } from "../sessions/session-store";
 import type { BackendSDK } from "../types/types";
+import { getErrorMessage } from "../util/errors";
 import { readWordlist } from "../util/helper";
 import { getWordlistManager } from "../wordlists/wordlists";
 
@@ -89,7 +89,7 @@ export async function startEngineSession(
       finalizing: false,
     };
     runningSessions.set(sessionKey(ref), running);
-    emitChanges(sdk, projectId, created.revision, [
+    emitSessionChanges(sdk, projectId, created.revision, [
       { type: "upsert", session: created.session },
     ]);
     // Finish the only startup file write before the first transport future is
@@ -161,23 +161,21 @@ export async function startEngineSession(
             running.phase,
             {
               code: "INTERNAL",
-              message:
-                running.eventError?.message ??
-                (cause instanceof Error ? cause.message : String(cause)),
+              message: running.eventError?.message ?? getErrorMessage(cause),
             },
           );
         },
       )
       .catch((cause: unknown) => {
         sdk.console.error(
-          `[SESSIONS] Could not finalize ${ref.sessionId}: ${cause instanceof Error ? cause.message : String(cause)}`,
+          `[SESSIONS] Could not finalize ${ref.sessionId}: ${getErrorMessage(cause)}`,
         );
       });
 
     return ok(started);
   } catch (cause) {
     sdk.console.error(cause);
-    return error(cause instanceof Error ? cause.message : String(cause));
+    return error(getErrorMessage(cause));
   }
 }
 
@@ -236,7 +234,7 @@ export async function pauseEngineSession(
   } catch (cause) {
     rollbackPause(session);
     return error(
-      `Could not persist paused state: ${cause instanceof Error ? cause.message : String(cause)}`,
+      `Could not persist paused state: ${getErrorMessage(cause)}`,
       "IO",
     );
   }
@@ -326,7 +324,7 @@ async function persistDiscoveryEvent(
         totalParametersAmount: event.totalParametersAmount,
       });
       if (updated && isCurrentSession(ref, running))
-        emitChanges(sdk, ref.projectId, updated.revision, [
+        emitSessionChanges(sdk, ref.projectId, updated.revision, [
           { type: "upsert", session: updated.session },
         ]);
       return;
@@ -350,7 +348,7 @@ async function queueEntry(
     return;
   const persisted = await getSessionStore().appendEntries(ref, [entry]);
   if (persisted === undefined || !isCurrentSession(ref, running)) return;
-  emitChanges(sdk, ref.projectId, persisted.revision, [
+  emitSessionChanges(sdk, ref.projectId, persisted.revision, [
     {
       type: "entries",
       ref,
@@ -375,7 +373,7 @@ async function persistState(
     running.state = state;
     running.phase = phase;
     if (state !== EngineState.Paused) running.stateBeforePause = undefined;
-    emitChanges(sdk, ref.projectId, updated.revision, [
+    emitSessionChanges(sdk, ref.projectId, updated.revision, [
       { type: "upsert", session: updated.session },
     ]);
     return updated.session;
@@ -401,7 +399,7 @@ async function persistTerminal(
     running.state = state;
     running.phase = phase;
     running.controller.abort();
-    emitChanges(sdk, ref.projectId, updated.revision, [
+    emitSessionChanges(sdk, ref.projectId, updated.revision, [
       {
         type: "terminal",
         session: updated.session,
@@ -457,7 +455,7 @@ function enqueueEvent(
   running.eventChain = running.eventChain.then(task).catch((cause: unknown) => {
     running.eventError ??= {
       code: "IO",
-      message: `Could not persist scan progress: ${cause instanceof Error ? cause.message : String(cause)}`,
+      message: `Could not persist scan progress: ${getErrorMessage(cause)}`,
     };
     running.acceptingEvents = false;
     running.controller.abort();
@@ -466,21 +464,6 @@ function enqueueEvent(
 
 async function drainEvents(running: RunningSession): Promise<void> {
   await running.eventChain;
-}
-
-function emitChanges(
-  sdk: BackendSDK,
-  projectId: string,
-  revision: number,
-  changes: SessionChange[],
-): void {
-  const envelope: SessionChangeEnvelope = {
-    version: 1,
-    projectId,
-    revision,
-    changes,
-  };
-  sdk.api.send("paramfinder:session_change", envelope);
 }
 
 function getActiveStateForPhase(phase: EnginePhase): EngineState {

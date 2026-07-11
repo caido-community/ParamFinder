@@ -176,6 +176,8 @@ describe("sessions store reliability", () => {
 
     expect(store.activeSession?.sentRequests).toHaveLength(1);
     expect(store.activeSession?.findings).toHaveLength(1);
+    expect(store.activeSession?.sentRequests[0]?.sequence).toBe(1);
+    expect(store.activeSession?.findings[0]?.sequence).toBe(2);
 
     store.acceptEnvelope({
       version: 1,

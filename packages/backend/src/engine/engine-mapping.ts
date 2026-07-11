@@ -4,6 +4,7 @@ import {
 } from "@paramfinder/engine";
 import type { EngineConfig, RunOptions } from "@paramfinder/engine";
 import type { ParamMinerConfig, Settings } from "shared";
+export { settingsToParamMinerConfig } from "shared";
 
 /**
  * Per-request deadline applied when a config does not specify one. Bounds slow
@@ -83,34 +84,5 @@ export function toRunOptions(
       config.scanTimeoutSeconds === undefined
         ? undefined
         : config.scanTimeoutSeconds * 1000,
-  };
-}
-
-export function settingsToParamMinerConfig(
-  settings: Settings,
-  overrides: Partial<ParamMinerConfig>,
-): ParamMinerConfig {
-  const attackType = overrides.attackType ?? "query";
-
-  return {
-    attackType,
-    learnRequestsCount: settings.learnRequestsCount,
-    autoDetectMaxSize: settings.autoDetectMaxSize,
-    maxQuerySize: settings.maxQuerySize,
-    maxHeaderSize: settings.maxHeaderSize,
-    maxBodySize: settings.maxBodySize,
-    updateContentLength: settings.updateContentLength,
-    autopilotEnabled: settings.autopilotEnabled,
-    addCacheBusterParameter: settings.addCacheBusterParameter,
-    wafDetection: settings.wafDetection,
-    ignoreCloudflareBlocks: settings.ignoreCloudflareBlocks,
-    additionalChecks: settings.additionalChecks,
-    ignoreAnomalyTypes: settings.ignoreAnomalyTypes,
-    customValueType: "string",
-    delayBetweenRequests: settings.delay,
-    requestTimeoutSeconds: settings.requestTimeoutSeconds,
-    scanTimeoutSeconds: settings.scanTimeoutSeconds,
-    debug: settings.debug,
-    ...overrides,
   };
 }

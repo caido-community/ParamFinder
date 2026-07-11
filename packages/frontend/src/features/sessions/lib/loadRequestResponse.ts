@@ -1,6 +1,7 @@
+import { createEngineRequestFromRaw } from "@paramfinder/engine";
 import { type ApiResult, error, ok, type RequestResponse } from "shared";
 
-import { parseRequest, parseResponse } from "@/shared/utils/request";
+import { parseResponse } from "@/shared/utils/request";
 import type { FrontendSDK } from "@/types";
 
 export async function loadRequestResponse(
@@ -25,24 +26,19 @@ export async function loadRequestResponse(
       return error("Response not found.", "NOT_FOUND");
     }
 
-    const parsedRequest = parseRequest(request.raw);
     const parsedResponse = parseResponse(response.raw);
-    const protocol = request.isTls ? "https" : "http";
     return ok({
-      request: {
+      request: createEngineRequestFromRaw({
+        raw: request.raw,
         id: request.id,
         host: request.host,
         port: request.port,
-        url: `${protocol}://${request.host}:${request.port}${request.path}${request.query ? `?${request.query}` : ""}`,
+        tls: request.isTls,
         path: request.path,
         query: request.query,
         method: request.method,
-        headers: parsedRequest.headers,
-        body: parsedRequest.body,
-        tls: request.isTls,
-        raw: request.raw,
         context: "discovery",
-      },
+      }),
       response: {
         requestId: request.id,
         status: response.statusCode,

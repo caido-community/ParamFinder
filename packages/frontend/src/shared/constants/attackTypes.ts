@@ -1,4 +1,4 @@
-import type { AttackType } from "shared";
+import { AttackType } from "shared";
 
 export type AttackTypeOption = {
   label: string;
@@ -6,13 +6,13 @@ export type AttackTypeOption = {
   icon: string;
 };
 
-export const attackTypes: AttackType[] = ["query", "body", "headers"];
-
 export const attackTypeOptions: AttackTypeOption[] = [
-  { label: "Query", value: "query", icon: "fas fa-link" },
-  { label: "Body", value: "body", icon: "fas fa-code" },
-  { label: "Headers", value: "headers", icon: "fas fa-list" },
+  { label: "Query", value: AttackType.Query, icon: "fas fa-link" },
+  { label: "Body", value: AttackType.Body, icon: "fas fa-code" },
+  { label: "Headers", value: AttackType.Headers, icon: "fas fa-list" },
 ];
+
+export const attackTypes = attackTypeOptions.map(({ value }) => value);
 
 export const attackTypeSelectOptions = attackTypeOptions.map(
   ({ label, value }) => ({ label, value }),

@@ -1,7 +1,9 @@
-import { access, readFile, rm, writeFile } from "fs/promises";
+import { readFile, rm, writeFile } from "fs/promises";
 import path from "path";
 
 import { type SDK } from "caido:plugin";
+
+import { pathExists } from "./filesystem";
 
 export async function readWordlist(filePath: string): Promise<string[]> {
   const data = String(await readFile(filePath));
@@ -39,7 +41,7 @@ export async function writeToFile(
   let filePath = path.join(dir, sanitizedFilename);
   let index = 1;
   while (index < maxAttempts) {
-    if (!(await fileExists(filePath))) {
+    if (!(await pathExists(filePath))) {
       break;
     }
 
@@ -55,15 +57,6 @@ export async function writeToFile(
 
   await writeFile(filePath, data);
   return filePath;
-}
-
-async function fileExists(filePath: string): Promise<boolean> {
-  try {
-    await access(filePath);
-    return true;
-  } catch {
-    return false;
-  }
 }
 
 export async function deleteFile(filePath: string): Promise<void> {

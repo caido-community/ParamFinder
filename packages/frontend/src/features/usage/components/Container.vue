@@ -85,8 +85,7 @@ const commands: { name: string; description: string }[] = [
   },
   {
     name: "Param Finder [HEADERS]",
-    description:
-      "Starts a scan right away, testing names as request headers.",
+    description: "Starts a scan right away, testing names as request headers.",
   },
   {
     name: "Param Finder [ADVANCED]",
@@ -189,7 +188,9 @@ const commands: { name: string; description: string }[] = [
                     >
                     <span>
                       Open the
-                      <span class="text-surface-100 font-medium">Wordlists</span>
+                      <span class="text-surface-100 font-medium"
+                        >Wordlists</span
+                      >
                       tab and import at least one wordlist. Enable it for the
                       attack types you want to test.
                     </span>
@@ -202,7 +203,9 @@ const commands: { name: string; description: string }[] = [
                     <span>
                       Right-click any HTTP request in HTTP History, Replay, or
                       any request editor and choose a
-                      <span class="text-surface-100 font-medium">Param Finder</span>
+                      <span class="text-surface-100 font-medium"
+                        >Param Finder</span
+                      >
                       command. The command palette
                       <code
                         class="px-1.5 py-0.5 rounded bg-surface-700 font-mono text-xs text-surface-100"
@@ -252,7 +255,9 @@ const commands: { name: string; description: string }[] = [
               </section>
 
               <section id="commands" class="scroll-mt-4 space-y-3">
-                <h3 class="text-base font-semibold text-surface-100">Commands</h3>
+                <h3 class="text-base font-semibold text-surface-100">
+                  Commands
+                </h3>
                 <p>
                   ParamFinder registers these commands on requests across Caido.
                   Trigger them from a request's right-click menu or from the
@@ -309,7 +314,9 @@ const commands: { name: string; description: string }[] = [
                     requests.
                   </li>
                   <li>
-                    <span class="text-surface-100 font-medium">JSON body path</span>
+                    <span class="text-surface-100 font-medium"
+                      >JSON body path</span
+                    >
                     applies to body attacks. It takes a JSONPath such as
                     <code
                       class="px-1.5 py-0.5 rounded bg-surface-700 font-mono text-xs text-surface-100"
@@ -330,7 +337,9 @@ const commands: { name: string; description: string }[] = [
               </section>
 
               <section id="wordlists" class="scroll-mt-4 space-y-3">
-                <h3 class="text-base font-semibold text-surface-100">Wordlists</h3>
+                <h3 class="text-base font-semibold text-surface-100">
+                  Wordlists
+                </h3>
                 <p>
                   Wordlists are the pool of candidate parameter names
                   ParamFinder tries. Manage them in the
@@ -348,7 +357,9 @@ const commands: { name: string; description: string }[] = [
                     Toggle each list
                     <span class="text-surface-100 font-medium">Enabled</span>
                     and assign the
-                    <span class="text-surface-100 font-medium">attack types</span>
+                    <span class="text-surface-100 font-medium"
+                      >attack types</span
+                    >
                     it applies to. Only enabled lists matching the scan's attack
                     type are used, so a scan won't run if nothing is enabled for
                     that type.
@@ -377,7 +388,9 @@ const commands: { name: string; description: string }[] = [
               </section>
 
               <section id="settings" class="scroll-mt-4 space-y-3">
-                <h3 class="text-base font-semibold text-surface-100">Settings</h3>
+                <h3 class="text-base font-semibold text-surface-100">
+                  Settings
+                </h3>
                 <p>
                   The
                   <span class="text-surface-100 font-medium">Settings</span>
@@ -386,11 +399,15 @@ const commands: { name: string; description: string }[] = [
                 </p>
                 <ul class="list-disc pl-5 space-y-2 marker:text-surface-400">
                   <li>
-                    <span class="text-surface-100 font-medium">Request delay</span>,
+                    <span class="text-surface-100 font-medium"
+                      >Request delay</span
+                    >,
                     <span class="text-surface-100 font-medium"
                       >request timeout</span
                     >, and an optional
-                    <span class="text-surface-100 font-medium">scan timeout</span>
+                    <span class="text-surface-100 font-medium"
+                      >scan timeout</span
+                    >
                     bound how long a whole run may take.
                   </li>
                   <li>
@@ -412,7 +429,9 @@ const commands: { name: string; description: string }[] = [
                     Turn it off to set the limits manually.
                   </li>
                   <li>
-                    <span class="text-surface-100 font-medium">WAF detection</span>
+                    <span class="text-surface-100 font-medium"
+                      >WAF detection</span
+                    >
                     and
                     <span class="text-surface-100 font-medium"
                       >Ignore Cloudflare WAF blocks</span

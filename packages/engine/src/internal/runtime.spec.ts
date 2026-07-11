@@ -131,6 +131,10 @@ describe("Cloudflare challenge handling", () => {
       message:
         "Cloudflare WAF detected after 2 retries. Run paused; resolve the challenge, then resume.",
     });
+    expect(events.slice(0, 2).map((event) => event.type)).toEqual([
+      "log",
+      "state",
+    ]);
 
     await Promise.resolve();
     expect(sends).toBe(3);
@@ -230,6 +234,10 @@ describe("request pacing and rate limiting", () => {
     });
     await vi.waitFor(() => expect(runControl.isPaused()).toBe(true));
     expect(sends).toBe(1);
+    expect(events.slice(0, 2).map((event) => event.type)).toEqual([
+      "state",
+      "log",
+    ]);
 
     runControl.resume();
     await expect(resultPromise).resolves.toMatchObject({

@@ -8,6 +8,7 @@ import {
   type Request,
   type RequestResponse,
   type SentRequest,
+  type Sequenced,
   type SessionChangeEnvelope,
   type SessionDescriptor,
   type SessionEntriesQuery,
@@ -43,8 +44,8 @@ export type RequestDetailState = {
 
 export type SessionView = SessionDescriptor & {
   id: string;
-  sentRequests: SentRequest[];
-  findings: SessionFinding[];
+  sentRequests: Sequenced<SentRequest>[];
+  findings: Sequenced<SessionFinding>[];
   logs: string[];
 };
 
@@ -56,24 +57,31 @@ function cacheKey(ref: SessionRef, kind: SessionEntryKind): string {
   return `${ref.projectId}\u0000${ref.sessionId}\u0000${kind}`;
 }
 
-function entryValues(entries: SessionEntry[], kind: "request"): SentRequest[];
+function entryValues(
+  entries: SessionEntry[],
+  kind: "request",
+): Sequenced<SentRequest>[];
 function entryValues(
   entries: SessionEntry[],
   kind: "finding",
-): SessionFinding[];
+): Sequenced<SessionFinding>[];
 function entryValues(entries: SessionEntry[], kind: "log"): string[];
 function entryValues(
   entries: SessionEntry[],
   kind: SessionEntryKind,
-): Array<SessionEntry["value"]> {
+): Array<SessionEntry["value"] | Sequenced<SentRequest | SessionFinding>> {
   switch (kind) {
     case "request":
       return entries.flatMap((entry) =>
-        entry.kind === kind ? [entry.value] : [],
+        entry.kind === kind
+          ? [{ ...entry.value, sequence: entry.sequence }]
+          : [],
       );
     case "finding":
       return entries.flatMap((entry) =>
-        entry.kind === kind ? [entry.value] : [],
+        entry.kind === kind
+          ? [{ ...entry.value, sequence: entry.sequence }]
+          : [],
       );
     case "log":
       return entries.flatMap((entry) =>

@@ -5,6 +5,8 @@ import type { SDK } from "caido:plugin";
 import { type Settings, type SettingsDocument, settingsSchema } from "shared";
 
 import { createDefaultSettings } from "../engine/engine-mapping";
+import { writeFileAtomically } from "../util/atomic-file";
+import { SerialTaskQueue } from "../util/serial-task-queue";
 
 type SettingsPersistence = {
   readFile: (path: string) => Promise<string>;
@@ -25,7 +27,7 @@ export class SettingsStore {
     revision: 0,
     settings: createDefaultSettings(),
   };
-  private writeQueue: Promise<void> = Promise.resolve();
+  private readonly writeQueue = new SerialTaskQueue();
   readonly ready: Promise<void>;
 
   constructor(
@@ -37,7 +39,7 @@ export class SettingsStore {
 
   async getSettings(): Promise<SettingsDocument> {
     await this.ready;
-    await this.writeQueue;
+    await this.writeQueue.onIdle();
     return copySettingsDocument(this.document);
   }
 
@@ -46,7 +48,7 @@ export class SettingsStore {
     changes: Partial<Settings>,
   ): Promise<SettingsDocument> {
     await this.ready;
-    return this.serialized(async () => {
+    return this.writeQueue.run(async () => {
       if (expectedRevision !== this.document.revision) {
         throw new SettingsConflictError(
           `Settings revision ${expectedRevision} is stale; current revision is ${this.document.revision}.`,
@@ -78,13 +80,7 @@ export class SettingsStore {
   private async persist(document: SettingsDocument): Promise<void> {
     const settingsPath = this.getSettingsPath();
     const data = JSON.stringify(document, null, 2);
-    if (this.persistence.replaceFile === undefined) {
-      await this.persistence.writeFile(settingsPath, data);
-      return;
-    }
-    const tempPath = `${settingsPath}.tmp`;
-    await this.persistence.writeFile(tempPath, data);
-    await this.persistence.replaceFile(tempPath, settingsPath);
+    await writeFileAtomically(settingsPath, data, this.persistence);
   }
 
   private async loadSettingsFromFile(): Promise<void> {
@@ -106,15 +102,6 @@ export class SettingsStore {
       }
       await this.persist(this.document);
     }
-  }
-
-  private serialized<T>(operation: () => Promise<T>): Promise<T> {
-    const result = this.writeQueue.then(operation, operation);
-    this.writeQueue = result.then(
-      () => undefined,
-      () => undefined,
-    );
-    return result;
   }
 }
 

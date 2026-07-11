@@ -1,8 +1,12 @@
+import {
+  createEngineRequestFromRaw,
+  createHeaderMap,
+} from "@paramfinder/engine";
 import type { Request as CaidoRequest } from "caido:utils";
 import { type ApiResult, error, ok, type Request } from "shared";
 
 import { type BackendSDK } from "../types/types";
-import { generateID } from "../util/helper";
+import { getErrorMessage } from "../util/errors";
 
 export async function getRequest(
   sdk: BackendSDK,
@@ -14,40 +18,24 @@ export async function getRequest(
       return error("Request not found", "NOT_FOUND");
     }
 
-    return ok(toRequest(requestResponse.request, generateID()));
+    return ok(toRequest(requestResponse.request));
   } catch (err) {
-    return error(err instanceof Error ? err.message : String(err));
+    return error(getErrorMessage(err));
   }
 }
 
-function toRequest(request: CaidoRequest, id: string): Request {
+function toRequest(request: CaidoRequest): Request {
   const spec = request.toSpec();
-  const query = spec.getQuery();
-  const url = `${spec.getTls() ? "https" : "http"}://${spec.getHost()}:${spec.getPort()}${spec.getPath()}${query !== "" ? `?${query}` : ""}`;
-
-  return {
-    id,
+  return createEngineRequestFromRaw({
+    raw: request.getRaw().toText(),
     host: spec.getHost(),
     port: spec.getPort(),
-    url,
-    path: spec.getPath(),
-    query,
-    method: spec.getMethod(),
-    headers: normalizeHeaders(spec.getHeaders()),
-    body: spec.getBody()?.toText() ?? "",
     tls: spec.getTls(),
+    path: spec.getPath(),
+    query: spec.getQuery(),
+    method: spec.getMethod(),
+    headers: createHeaderMap(spec.getHeaders()),
+    body: spec.getBody()?.toText() ?? "",
     context: "discovery",
-    raw: request.getRaw().toText(),
-  };
-}
-
-function normalizeHeaders(
-  headers: Record<string, string | string[]>,
-): Request["headers"] {
-  return Object.fromEntries(
-    Object.entries(headers).map(([name, value]) => [
-      name,
-      Array.isArray(value) ? value : [value],
-    ]),
-  );
+  });
 }

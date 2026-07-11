@@ -36,6 +36,12 @@ interface SendRequestOptions {
   allowCloudflareChallenge?: boolean;
 }
 
+interface PauseForInterventionOptions {
+  level: "info" | "warn";
+  message: string;
+  stateFirst: boolean;
+}
+
 export interface EngineRuntimeContext {
   runtime: {
     provider: EngineDependencies["provider"];
@@ -220,20 +226,12 @@ export function createEngineRuntimeContext(
           throw new EngineError("PROVIDER_ERROR", message);
         }
 
-        emit(runOptions, {
-          type: "state",
-          state: EngineState.Paused,
-          phase: getPhaseForRequest(request),
-        });
-        emit(runOptions, {
-          type: "log",
+        await pauseForIntervention(request, runOptions, {
           level: "info",
           message:
             "Rate limited, pausing the run. Adjust the delay between requests, then resume.",
+          stateFirst: true,
         });
-        runOptions.runControl.pause();
-        await waitForCheckpoint(runOptions);
-        emitResumedState(runOptions, request);
         continue;
       }
 
@@ -261,22 +259,51 @@ export function createEngineRuntimeContext(
         throw new EngineError("PROVIDER_ERROR", message);
       }
 
-      emit(runOptions, {
-        type: "log",
+      await pauseForIntervention(request, runOptions, {
         level: "warn",
         message:
           "Cloudflare WAF detected after 2 retries. Run paused; resolve the challenge, then resume.",
+        stateFirst: false,
       });
-      emit(runOptions, {
-        type: "state",
-        state: EngineState.Paused,
-        phase: getPhaseForRequest(request),
-      });
-      runOptions.runControl.pause();
-      await waitForCheckpoint(runOptions);
-      emitResumedState(runOptions, request);
       retries = 0;
     }
+  };
+
+  const pauseForIntervention = async (
+    request: EngineRequest,
+    runOptions: RunOptions,
+    options: PauseForInterventionOptions,
+  ): Promise<void> => {
+    const runControl = runOptions.runControl;
+    if (runControl === undefined) {
+      throw new EngineError(
+        "INTERNAL_ERROR",
+        "Cannot pause a run without run control",
+      );
+    }
+
+    const stateEvent: DiscoveryEvent = {
+      type: "state",
+      state: EngineState.Paused,
+      phase: getPhaseForRequest(request),
+    };
+    const logEvent: DiscoveryEvent = {
+      type: "log",
+      level: options.level,
+      message: options.message,
+    };
+
+    if (options.stateFirst) {
+      emit(runOptions, stateEvent);
+      emit(runOptions, logEvent);
+    } else {
+      emit(runOptions, logEvent);
+      emit(runOptions, stateEvent);
+    }
+
+    runControl.pause();
+    await waitForCheckpoint(runOptions);
+    emitResumedState(runOptions, request);
   };
 
   const sendRequest = async (

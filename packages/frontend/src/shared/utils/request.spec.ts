@@ -2,7 +2,6 @@ import { describe, expect, it } from "vitest";
 
 import {
   createRequestFromSelection,
-  generateID,
   parseRequest,
   parseResponse,
   toCrlf,
@@ -75,10 +74,5 @@ describe("request utils", () => {
       tls: true,
       context: "discovery",
     });
-  });
-
-  it("generates non-empty ids", () => {
-    expect(generateID()).toEqual(expect.any(String));
-    expect(generateID().length).toBeGreaterThan(5);
   });
 });

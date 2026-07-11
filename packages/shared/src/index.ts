@@ -29,7 +29,12 @@ export const MiningSessionPhase = {
 export type MiningSessionPhase =
   (typeof MiningSessionPhase)[keyof typeof MiningSessionPhase];
 
-export const attackTypeSchema = z.enum(["query", "body", "headers"]);
+export const AttackType = {
+  Query: "query",
+  Body: "body",
+  Headers: "headers",
+} as const;
+export const attackTypeSchema = z.enum(AttackType);
 export const requestContextSchema = z.enum([
   "discovery",
   "narrower",
@@ -277,6 +282,33 @@ export const paramMinerConfigSchema = z.object({
   debug: z.boolean(),
 });
 
+export function settingsToParamMinerConfig(
+  settings: Settings,
+  overrides: Partial<ParamMinerConfig> = {},
+): ParamMinerConfig {
+  return {
+    attackType: overrides.attackType ?? "query",
+    learnRequestsCount: settings.learnRequestsCount,
+    autoDetectMaxSize: settings.autoDetectMaxSize,
+    maxQuerySize: settings.maxQuerySize,
+    maxHeaderSize: settings.maxHeaderSize,
+    maxBodySize: settings.maxBodySize,
+    updateContentLength: settings.updateContentLength,
+    autopilotEnabled: settings.autopilotEnabled,
+    addCacheBusterParameter: settings.addCacheBusterParameter,
+    wafDetection: settings.wafDetection,
+    ignoreCloudflareBlocks: settings.ignoreCloudflareBlocks,
+    additionalChecks: settings.additionalChecks,
+    ignoreAnomalyTypes: settings.ignoreAnomalyTypes,
+    customValueType: "string",
+    delayBetweenRequests: settings.delay,
+    requestTimeoutSeconds: settings.requestTimeoutSeconds,
+    scanTimeoutSeconds: settings.scanTimeoutSeconds,
+    debug: settings.debug,
+    ...overrides,
+  };
+}
+
 export const wordlistStatusSchema = z.enum([
   "pending",
   "active",
@@ -406,6 +438,7 @@ export type SessionEntryInput =
   | { kind: "request"; value: SentRequest }
   | { kind: "finding"; value: SessionFinding }
   | { kind: "log"; value: string };
+export type Sequenced<T> = T & { sequence: number };
 export type SessionEntry = SessionEntryInput & { sequence: number };
 export type SessionEntryValue = SessionEntry["value"];
 export const sessionEntrySchema = z.discriminatedUnion("kind", [

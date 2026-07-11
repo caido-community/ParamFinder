@@ -4,10 +4,10 @@ import {
   createEngineConfig,
   createEngineRequest,
   createEngineRequestHeaders,
+  createHeaderMap,
   type EngineConfig,
   type EngineRequest,
   type EngineRequestResponse,
-  type HeaderMap,
   type RequestProvider,
 } from "@paramfinder/engine";
 
@@ -140,28 +140,4 @@ function resolveCliContentType(
   return options.jsonBody || (!options.data && body === "{}")
     ? "application/json"
     : "application/x-www-form-urlencoded";
-}
-
-function createHeaderMap(headers: Headers): HeaderMap {
-  const output: HeaderMap = {};
-  headers.forEach((value, name) => {
-    appendHeader(output, name, value);
-  });
-
-  return output;
-}
-
-function appendHeader(headers: HeaderMap, name: string, value: string): void {
-  const key = findHeaderKey(headers, name) ?? name;
-  if (!headers[key]) {
-    headers[key] = [];
-  }
-  headers[key].push(value);
-}
-
-function findHeaderKey(headers: HeaderMap, name: string): string | undefined {
-  const target = name.toLowerCase();
-  return Object.keys(headers).find(
-    (headerName) => headerName.toLowerCase() === target,
-  );
 }

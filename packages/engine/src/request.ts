@@ -4,7 +4,7 @@ import type { EngineRequest, HeaderMap, RequestContext } from "./types";
 import { appendHeader, buildUrl, getUtf8ByteLength, hasHeader } from "./utils";
 
 type HeaderValue = string | string[];
-type HeaderInput = Headers | HeaderMap | Record<string, HeaderValue>;
+export type HeaderInput = Headers | HeaderMap | Record<string, HeaderValue>;
 
 export interface CreateEngineRequestInput {
   url: string;
@@ -81,14 +81,7 @@ export function createEngineRequest(
     appendHeader(headers, "Host", parsedUrl.host);
   }
 
-  const inferredContentType = inferContentType(body);
-  if (body && inferredContentType && !hasHeader(headers, "Content-Type")) {
-    appendHeader(headers, "Content-Type", inferredContentType);
-  }
-
-  if (body && !hasHeader(headers, "Content-Length")) {
-    appendHeader(headers, "Content-Length", getUtf8ByteLength(body).toString());
-  }
+  addBodyMetadataHeaders(headers, body, inferContentType(body));
 
   const path = parsedUrl.pathname || "/";
   const query = parsedUrl.search.length > 0 ? parsedUrl.search.slice(1) : "";
@@ -152,16 +145,14 @@ export function createEngineRequestHeaders(
     }
   }
 
-  const body = input.body ?? "";
-  if (body && input.contentType && !hasHeader(headers, "Content-Type")) {
-    appendHeader(headers, "Content-Type", input.contentType);
-  }
-
-  if (body && !hasHeader(headers, "Content-Length")) {
-    appendHeader(headers, "Content-Length", getUtf8ByteLength(body).toString());
-  }
+  addBodyMetadataHeaders(headers, input.body ?? "", input.contentType);
 
   return headers;
+}
+
+/** Convert supported header collections into a case-insensitive header map. */
+export function createHeaderMap(headers: HeaderInput): HeaderMap {
+  return normalizeHeaders(headers);
 }
 
 export function canSendRequestBody(method: string): boolean {
@@ -198,6 +189,22 @@ function normalizeHeaders(headers?: HeaderInput): HeaderMap {
   }
 
   return normalized;
+}
+
+function addBodyMetadataHeaders(
+  headers: HeaderMap,
+  body: string,
+  contentType?: string,
+): void {
+  if (!body) return;
+
+  if (contentType && !hasHeader(headers, "Content-Type")) {
+    appendHeader(headers, "Content-Type", contentType);
+  }
+
+  if (!hasHeader(headers, "Content-Length")) {
+    appendHeader(headers, "Content-Length", getUtf8ByteLength(body).toString());
+  }
 }
 
 function buildRawRequest(

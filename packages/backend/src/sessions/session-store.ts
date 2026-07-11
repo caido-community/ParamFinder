@@ -1,4 +1,4 @@
-import { access, readFile, rename, writeFile } from "fs/promises";
+import { readFile, rename, writeFile } from "fs/promises";
 import path from "path";
 
 import {
@@ -23,6 +23,9 @@ import {
 import { z } from "zod";
 
 import type { BackendSDK } from "../types/types";
+import { writeFileAtomically } from "../util/atomic-file";
+import { pathExists } from "../util/filesystem";
+import { SerialTaskQueue } from "../util/serial-task-queue";
 
 const DEFAULT_PAGE_SIZE = 250;
 const MAX_PAGE_SIZE = 1_000;
@@ -80,7 +83,7 @@ const filePersistence: SessionFilePersistence = {
   readFile: async (filePath) => String(await readFile(filePath)),
   writeFile,
   replaceFile: rename,
-  exists,
+  exists: pathExists,
 };
 
 /**
@@ -91,7 +94,7 @@ const filePersistence: SessionFilePersistence = {
  */
 export class SessionStore {
   private projects = new Map<string, ProjectState>();
-  private operationQueue: Promise<void> = Promise.resolve();
+  private readonly operationQueue = new SerialTaskQueue();
   readonly ready: Promise<void>;
 
   constructor(
@@ -535,12 +538,11 @@ export class SessionStore {
 
   private async persist(): Promise<void> {
     const snapshotPath = this.snapshotPath();
-    const temporaryPath = `${snapshotPath}.tmp`;
-    await this.persistence.writeFile(
-      temporaryPath,
+    await writeFileAtomically(
+      snapshotPath,
       JSON.stringify(toSnapshot(this.projects)),
+      this.persistence,
     );
-    await this.persistence.replaceFile(temporaryPath, snapshotPath);
   }
 
   private serialized<T>(operation: () => Promise<T>): Promise<T> {
@@ -548,12 +550,7 @@ export class SessionStore {
       await this.ready;
       return operation();
     };
-    const result = this.operationQueue.then(execute, execute);
-    this.operationQueue = result.then(
-      () => undefined,
-      () => undefined,
-    );
-    return result;
+    return this.operationQueue.run(execute);
   }
 }
 
@@ -780,13 +777,4 @@ function compareStrings(left: string, right: string): number {
 
 function safeFilename(value: string): string {
   return value.replace(/[^a-zA-Z0-9_-]/g, "_");
-}
-
-async function exists(filePath: string): Promise<boolean> {
-  try {
-    await access(filePath);
-    return true;
-  } catch {
-    return false;
-  }
 }

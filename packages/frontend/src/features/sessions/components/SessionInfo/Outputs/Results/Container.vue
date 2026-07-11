@@ -52,16 +52,16 @@ const {
       </EmptyMessage>
       <div v-else class="flex flex-col gap-1">
         <button
-          v-for="(finding, index) in findings"
-          :key="getFindingKey(finding, index)"
+          v-for="finding in findings"
+          :key="getFindingKey(finding)"
           type="button"
           class="w-full rounded px-2 py-1 text-left transition-colors hover:bg-surface-800 focus-visible:outline focus-visible:outline-1 focus-visible:outline-secondary-400"
           :class="
-            store.selectedFindingKey === getFindingKey(finding, index)
+            store.selectedFindingKey === getFindingKey(finding)
               ? 'bg-highlight text-surface-0'
               : 'text-surface-200'
           "
-          @click="openFinding(finding, index)"
+          @click="openFinding(finding)"
         >
           <span class="whitespace-pre-wrap break-words">
             {{ finding.parameter.name }}

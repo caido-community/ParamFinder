@@ -42,7 +42,7 @@ describe("loadRequestResponse", () => {
       value: {
         request: expect.objectContaining({
           id: "request-1",
-          url: "https://example.com:443/search?q=test",
+          url: "https://example.com/search?q=test",
           body: "hello",
           raw: expect.stringContaining("POST /search?q=test"),
         }),
@@ -57,6 +57,41 @@ describe("loadRequestResponse", () => {
 
     expect(sdk.graphql.request).toHaveBeenCalledWith({ id: "request-1" });
     expect(sdk.graphql.response).toHaveBeenCalledWith({ id: "response-1" });
+  });
+
+  it("keeps GraphQL request metadata authoritative over the raw request line", async () => {
+    const sdk = createSDK();
+    vi.mocked(sdk.graphql.request).mockResolvedValueOnce({
+      request: {
+        id: "stored-request-id",
+        host: "canonical.example",
+        port: 8443,
+        path: "/canonical",
+        query: "source=graphql",
+        method: "PATCH",
+        isTls: true,
+        raw: "GET /raw?source=message HTTP/1.1\r\nX-Test: value\r\n\r\nraw-body",
+        response: { id: "response-1" },
+      },
+    } as never);
+
+    await expect(loadRequestResponse(sdk, "lookup-id")).resolves.toMatchObject({
+      success: true,
+      value: {
+        request: {
+          id: "stored-request-id",
+          host: "canonical.example",
+          port: 8443,
+          url: "https://canonical.example:8443/canonical?source=graphql",
+          path: "/canonical",
+          query: "source=graphql",
+          method: "PATCH",
+          headers: { "x-test": ["value"] },
+          body: "raw-body",
+          tls: true,
+        },
+      },
+    });
   });
 
   it("reports a request without a response", async () => {

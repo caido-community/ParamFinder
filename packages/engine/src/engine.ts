@@ -3,7 +3,10 @@ import { toEngineError } from "./errors";
 import type { DiscoveryEvent } from "./events";
 import { createDiscoveryWorkflows } from "./internal/discovery-workflows";
 import { createLearningWorkflows } from "./internal/learning-workflows";
-import { createEngineRuntimeContext } from "./internal/runtime";
+import {
+  createEngineRuntimeContext,
+  type EngineRuntimeContext,
+} from "./internal/runtime";
 import {
   createCanceledRunResult,
   createCompletedRunResult,
@@ -23,6 +26,7 @@ import type {
   EngineRunInput,
   EngineRunResult,
   Finding,
+  RunOptions,
 } from "./types";
 import { sanitizeWords } from "./utils";
 
@@ -143,20 +147,9 @@ export function createDiscoveryEngine(dependencies: EngineDependencies) {
         runOptions: discoveryRunOptions,
       });
 
-      runtimeContext.emit(parsed.runOptions, {
-        type: "state",
+      return finalizeRun(runtimeContext, parsed.runOptions, {
         state: EngineState.Completed,
         phase,
-      });
-      runtimeContext.emit(parsed.runOptions, {
-        type: "completed",
-        state: EngineState.Completed,
-        phase,
-        findings: discoveryResult.findings,
-        totalParametersAmount: discoveryResult.totalParametersAmount,
-      });
-
-      return createCompletedRunResult({
         findings: discoveryResult.findings,
         profile: requireProfile(
           profile,
@@ -167,46 +160,22 @@ export function createDiscoveryEngine(dependencies: EngineDependencies) {
     } catch (error) {
       const engineError = toEngineError(error);
       if (engineError.code === "RUN_ABORTED") {
-        runtimeContext.emit(parsed.runOptions, {
-          type: "state",
+        return finalizeRun(runtimeContext, parsed.runOptions, {
           state: EngineState.Canceled,
-          phase,
-        });
-        runtimeContext.emit(parsed.runOptions, {
-          type: "completed",
-          state: EngineState.Canceled,
-          phase,
-          findings: partialFindings,
-          totalParametersAmount,
-        });
-
-        return createCanceledRunResult({
           phase,
           profile,
-          totalParametersAmount,
           findings: partialFindings,
+          totalParametersAmount,
         });
       }
 
       if (engineError.code === "RUN_TIMEOUT") {
-        runtimeContext.emit(parsed.runOptions, {
-          type: "state",
+        return finalizeRun(runtimeContext, parsed.runOptions, {
           state: EngineState.Timeout,
-          phase,
-        });
-        runtimeContext.emit(parsed.runOptions, {
-          type: "completed",
-          state: EngineState.Timeout,
-          phase,
-          findings: partialFindings,
-          totalParametersAmount,
-        });
-
-        return createTimeoutRunResult({
           phase,
           profile,
-          totalParametersAmount,
           findings: partialFindings,
+          totalParametersAmount,
         });
       }
 
@@ -217,26 +186,13 @@ export function createDiscoveryEngine(dependencies: EngineDependencies) {
           level: "error",
           message: failureReason,
         });
-        runtimeContext.emit(parsed.runOptions, {
-          type: "state",
+        return finalizeRun(runtimeContext, parsed.runOptions, {
           state: EngineState.Error,
-          phase,
-        });
-        runtimeContext.emit(parsed.runOptions, {
-          type: "completed",
-          state: EngineState.Error,
-          phase,
-          findings: partialFindings,
-          totalParametersAmount,
-          failureReason,
-        });
-
-        return createErrorRunResult({
           phase,
           profile,
+          findings: partialFindings,
           totalParametersAmount,
           failureReason,
-          findings: partialFindings,
         });
       }
 
@@ -256,4 +212,50 @@ export function createDiscoveryEngine(dependencies: EngineDependencies) {
     discover,
     run,
   };
+}
+
+type FinalizeRunArgs =
+  | (Parameters<typeof createCompletedRunResult>[0] & {
+      state: EngineState.Completed;
+      phase: EnginePhase.Discovery;
+    })
+  | (Parameters<typeof createCanceledRunResult>[0] & {
+      state: EngineState.Canceled;
+    })
+  | (Parameters<typeof createTimeoutRunResult>[0] & {
+      state: EngineState.Timeout;
+    })
+  | (Parameters<typeof createErrorRunResult>[0] & {
+      state: EngineState.Error;
+    });
+
+function finalizeRun(
+  runtimeContext: EngineRuntimeContext,
+  runOptions: RunOptions | undefined,
+  args: FinalizeRunArgs,
+): EngineRunResult {
+  runtimeContext.emit(runOptions, {
+    type: "state",
+    state: args.state,
+    phase: args.phase,
+  });
+  let result: EngineRunResult;
+  switch (args.state) {
+    case EngineState.Completed:
+      result = createCompletedRunResult(args);
+      break;
+    case EngineState.Canceled:
+      result = createCanceledRunResult(args);
+      break;
+    case EngineState.Timeout:
+      result = createTimeoutRunResult(args);
+      break;
+    case EngineState.Error:
+      result = createErrorRunResult(args);
+      break;
+  }
+
+  const { profile: _profile, ...summary } = result;
+  runtimeContext.emit(runOptions, { type: "completed", ...summary });
+  return result;
 }

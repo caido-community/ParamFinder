@@ -1,4 +1,3 @@
-import { parseLearnInput } from "../config";
 import { detectAnomaly, matchesWafResponse } from "../detect-anomaly";
 import {
   applyAdditionalChecks,
@@ -31,9 +30,8 @@ import {
 
 export function createLearningWorkflows(runtimeContext: EngineRuntimeContext) {
   const performLearning = async (
-    input: EngineLearnInput,
+    parsed: EngineLearnInput,
   ): Promise<EngineLearnResult> => {
-    const parsed = parseLearnInput(input);
     const samples: LearningSample[] = [];
 
     runtimeContext.emit(parsed.runOptions, {

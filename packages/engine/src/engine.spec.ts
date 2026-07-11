@@ -258,7 +258,7 @@ describe("createDiscoveryEngine", () => {
           event.type === "log" &&
           event.message.includes('Verifying candidate parameter "name"'),
       ),
-    ).toMatchObject({ level: "debug" });
+    ).toMatchObject({ level: "info" });
   });
 
   it("still finds non-reflected parameters in a reflected chunk", async () => {
@@ -1223,6 +1223,10 @@ describe("createDiscoveryEngine", () => {
       state: "canceled",
       findings: [{ parameter: { name: "secret" } }],
     });
+    expect(events.slice(-2).map((event) => event.type)).toEqual([
+      "state",
+      "completed",
+    ]);
   });
 
   it("returns an error result when the provider fails mid-run", async () => {
@@ -1273,5 +1277,9 @@ describe("createDiscoveryEngine", () => {
         (event) => event.type === "completed" && event.state === "error",
       ),
     ).toBe(true);
+    expect(events.slice(-2).map((event) => event.type)).toEqual([
+      "state",
+      "completed",
+    ]);
   });
 });

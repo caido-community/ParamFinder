@@ -1,10 +1,10 @@
 import type {
   EngineRequest,
   EngineRequestResponse,
-  HeaderMap,
   RequestProvider,
   RequestProviderSendOptions,
 } from "@paramfinder/engine";
+import { createHeaderMap } from "@paramfinder/engine";
 import type { SDK } from "caido:plugin";
 import { RequestSpec } from "caido:utils";
 
@@ -36,7 +36,7 @@ export class CaidoRequestProvider implements RequestProvider {
       response: {
         requestId,
         status: sent.response.getCode(),
-        headers: normalizeHeaders(sent.response.getHeaders()),
+        headers: createHeaderMap(sent.response.getHeaders()),
         body: body?.toText(),
         length: body?.length ?? 0,
         time: sent.response.getRoundtripTime(),
@@ -87,13 +87,4 @@ function toRequestSpec(request: EngineRequest): RequestSpec {
   }
 
   return spec;
-}
-
-function normalizeHeaders(headers: HeaderMap): HeaderMap {
-  return Object.fromEntries(
-    Object.entries(headers).map(([name, value]) => [
-      name,
-      Array.isArray(value) ? value : [value],
-    ]),
-  );
 }

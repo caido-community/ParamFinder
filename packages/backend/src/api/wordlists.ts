@@ -7,7 +7,11 @@ import {
 } from "shared";
 
 import type { BackendSDK } from "../types/types";
-import { getWordlistManager } from "../wordlists/wordlists";
+import { getErrorMessage } from "../util/errors";
+import {
+  getWordlistManager,
+  WordlistNotFoundError,
+} from "../wordlists/wordlists";
 
 export async function getWordlists(
   _: BackendSDK,
@@ -15,7 +19,7 @@ export async function getWordlists(
   try {
     return ok(await getWordlistManager().getWordlists());
   } catch (cause) {
-    return error(cause instanceof Error ? cause.message : String(cause), "IO");
+    return error(getErrorMessage(cause), "IO");
   }
 }
 
@@ -24,7 +28,7 @@ export async function clearWordlists(_: BackendSDK): Promise<ApiResult<void>> {
     await getWordlistManager().clearWordlists();
     return ok(undefined);
   } catch (cause) {
-    return error(cause instanceof Error ? cause.message : String(cause), "IO");
+    return error(getErrorMessage(cause), "IO");
   }
 }
 
@@ -44,7 +48,7 @@ export async function importWordlist(
     return ok(await getWordlistManager().importWordlist(data, filename));
   } catch (cause) {
     return error(
-      cause instanceof Error ? cause.message : String(cause),
+      getErrorMessage(cause),
       cause instanceof TypeError ? "VALIDATION" : "IO",
     );
   }
@@ -59,7 +63,7 @@ export async function deleteWordlist(
     await getWordlistManager().deleteWordlist(id);
     return ok(undefined);
   } catch (cause) {
-    return error(cause instanceof Error ? cause.message : String(cause), "IO");
+    return error(getErrorMessage(cause), "IO");
   }
 }
 
@@ -75,8 +79,8 @@ export async function setWordlistEnabled(
     return ok(undefined);
   } catch (cause) {
     return error(
-      cause instanceof Error ? cause.message : String(cause),
-      "NOT_FOUND",
+      getErrorMessage(cause),
+      cause instanceof WordlistNotFoundError ? "NOT_FOUND" : "IO",
     );
   }
 }
@@ -93,8 +97,12 @@ export async function setWordlistAttackTypes(
     return ok(undefined);
   } catch (cause) {
     return error(
-      cause instanceof Error ? cause.message : String(cause),
-      cause instanceof TypeError ? "VALIDATION" : "NOT_FOUND",
+      getErrorMessage(cause),
+      cause instanceof TypeError
+        ? "VALIDATION"
+        : cause instanceof WordlistNotFoundError
+          ? "NOT_FOUND"
+          : "IO",
     );
   }
 }
