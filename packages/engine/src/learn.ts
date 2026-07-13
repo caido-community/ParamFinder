@@ -20,6 +20,7 @@ import {
   headerValuesEqual,
   normalizeHeaderName,
   randomString,
+  sampleBody,
   sanitizeWords,
   stringSimilarity,
 } from "./utils";
@@ -70,7 +71,10 @@ export function deriveBaselineProfile(
 
   const initialBody = initialRequestResponse.response.body ?? "";
   const secondBody = secondSample.requestResponse.response.body ?? "";
-  const bodyDiffReferenceCount = countLineDifferences(initialBody, secondBody);
+  const bodyDiffReferenceCount = countLineDifferences(
+    sampleBody(initialBody),
+    sampleBody(secondBody),
+  );
   let stableFactors = checkStableFactors(
     initialRequestResponse,
     secondSample.requestResponse,
@@ -123,7 +127,7 @@ export function deriveBaselineProfile(
 }
 
 export function extractWordsFromResponseBody(body: string): string[] {
-  const cleaned = body
+  const cleaned = sampleBody(body)
     .replace(/[^a-zA-Z0-9\s_-]/g, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -288,7 +292,10 @@ function checkStableFactors(
     ...getNormalizedHeaderNames(nextResponse.headers),
   ]);
   const similarity = stringSimilarity(initialBody, nextBody);
-  const diffCount = countLineDifferences(initialBody, nextBody);
+  const diffCount = countLineDifferences(
+    sampleBody(initialBody),
+    sampleBody(nextBody),
+  );
   const reflectionsCount = getReflectionsCount(nextBody, parameters);
   for (const headerName of headerNames) {
     const initialHeaderValues = getHeaderValues(

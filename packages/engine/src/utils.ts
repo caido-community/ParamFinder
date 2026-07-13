@@ -2,6 +2,24 @@ import type { EngineRequest, HeaderMap, LoggerFn, LoggerLevel } from "./types";
 
 export const DEFAULT_LEARNING_PARAMETER_NAME_LENGTH = 10;
 export const DEFAULT_LEARNING_PARAMETER_VALUE_LENGTH = 10;
+export const MAX_HEURISTIC_BODY_LENGTH = 256 * 1024;
+
+export function sampleBody(body: string): string {
+  if (body.length <= MAX_HEURISTIC_BODY_LENGTH) {
+    return body;
+  }
+
+  const sampledCharacters = MAX_HEURISTIC_BODY_LENGTH - 2;
+  const segmentLength = Math.floor(sampledCharacters / 3);
+  const middleStart = Math.floor((body.length - segmentLength) / 2);
+  const endLength = sampledCharacters - segmentLength * 2;
+
+  return [
+    body.slice(0, segmentLength),
+    body.slice(middleStart, middleStart + segmentLength),
+    body.slice(-endLength),
+  ].join("\n");
+}
 
 export function normalizeHeaderName(name: string): string {
   return name.toLowerCase();
@@ -156,11 +174,15 @@ export function stringSimilarity(
   second: string,
   substringLength: number = 2,
 ): number {
-  const left = first.toLowerCase();
+  if (first === second) {
+    return 1;
+  }
+
+  const left = sampleBody(first).toLowerCase();
   return similarityFromFragmentCounts(
     buildFragmentCounts(left, substringLength),
     left.length,
-    second,
+    sampleBody(second),
     substringLength,
   );
 }
@@ -187,6 +209,10 @@ export function countLineDifferencesFromLeft(
 }
 
 export function countLineDifferences(first: string, second: string): number {
+  if (first === second) {
+    return 0;
+  }
+
   return countLineDifferencesFromLeft(splitLines(first), second);
 }
 

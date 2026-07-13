@@ -8,6 +8,7 @@ import {
   getSizeProbeConfig,
 } from "./learn";
 import type { EngineRequestResponse, Parameter } from "./types";
+import { MAX_HEURISTIC_BODY_LENGTH } from "./utils";
 
 function createRequestResponse(
   body: string,
@@ -67,6 +68,18 @@ describe("deriveBaselineProfile", () => {
     expect(profile.stableFactors.bodyLengthStable).toBe(false);
   });
 
+  it("compares sampled lines for large response bodies", () => {
+    const padding = "padding\n".repeat(MAX_HEURISTIC_BODY_LENGTH / 8);
+    const profile = deriveBaselineProfile([
+      createRequestResponse(`start\n${padding}middle-a\n${padding}end`),
+      createRequestResponse(`start\n${padding}middle-b\n${padding}end`),
+      createRequestResponse(`start\n${padding}middle-c\n${padding}end`),
+    ]);
+
+    expect(profile.bodyDiffReferenceCount).toBeGreaterThan(0);
+    expect(profile.stableFactors.bodyStable).toBe(true);
+  });
+
   it("treats header names as case-insensitive when learning stability", () => {
     const profile = deriveBaselineProfile([
       createRequestResponse("stable", [], {
@@ -107,6 +120,17 @@ describe("word helpers", () => {
   it("extracts unique meaningful words from response bodies", () => {
     const words = extractWordsFromResponseBody("hello world hello _meta test!");
     expect(words).toEqual(["hello", "world", "_meta", "test"]);
+  });
+
+  it("extracts words from a bounded sample of large response bodies", () => {
+    const padding = "x".repeat(MAX_HEURISTIC_BODY_LENGTH);
+    const words = extractWordsFromResponseBody(
+      `startword ${padding} middleword ${padding} endword`,
+    );
+
+    expect(words).toContain("startword");
+    expect(words).toContain("middleword");
+    expect(words).toContain("endword");
   });
 
   it("applies special-character filtering", () => {

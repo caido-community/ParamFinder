@@ -15,6 +15,7 @@ import {
   hasHeader,
   headerValuesEqual,
   normalizeHeaderName,
+  sampleBody,
   similarityFromFragmentCounts,
   splitLines,
 } from "./utils";
@@ -41,9 +42,14 @@ function referenceSimilarity(
   reference: EngineResponse,
   responseBody: string,
 ): number {
+  const referenceBody = reference.body ?? "";
+  if (referenceBody === responseBody) {
+    return 1;
+  }
+
   const index = getReferenceIndex(reference);
   if (index.similarityCounts === undefined) {
-    const lowered = (reference.body ?? "").toLowerCase();
+    const lowered = sampleBody(referenceBody).toLowerCase();
     index.similarityCounts = buildFragmentCounts(lowered);
     index.similarityLength = lowered.length;
   }
@@ -51,7 +57,7 @@ function referenceSimilarity(
   return similarityFromFragmentCounts(
     index.similarityCounts,
     index.similarityLength ?? 0,
-    responseBody,
+    sampleBody(responseBody),
   );
 }
 
@@ -59,12 +65,16 @@ function referenceLineDifferences(
   reference: EngineResponse,
   responseBody: string,
 ): number {
-  const index = getReferenceIndex(reference);
-  if (index.lines === undefined) {
-    index.lines = splitLines(reference.body ?? "");
+  if ((reference.body ?? "") === responseBody) {
+    return 0;
   }
 
-  return countLineDifferencesFromLeft(index.lines, responseBody);
+  const index = getReferenceIndex(reference);
+  if (index.lines === undefined) {
+    index.lines = splitLines(sampleBody(reference.body ?? ""));
+  }
+
+  return countLineDifferencesFromLeft(index.lines, sampleBody(responseBody));
 }
 
 interface CompareResponseToReferenceOptions {
