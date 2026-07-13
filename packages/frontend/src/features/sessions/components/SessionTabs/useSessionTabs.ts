@@ -6,6 +6,7 @@ import { useSessionActions } from "@/features/sessions/composables/useSessionAct
 import {
   getSessionCapabilities,
   getSessionStateMeta,
+  getSessionStateTitle,
   statusToneClasses,
 } from "@/features/sessions/lib/sessionStats";
 import { useSessionsStore } from "@/features/sessions/stores/sessions.store";
@@ -88,6 +89,7 @@ export function useSessionTabs() {
     remove,
     onContextMenu,
     statusLabel,
+    statusTitle: getSessionStateTitle,
     statusDotClasses,
   };
 }

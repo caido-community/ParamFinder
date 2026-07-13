@@ -114,7 +114,7 @@ export function getSessionStateMeta(
     case MiningSessionState.Completed:
       return { label: "Completed", tone: "success" };
     case MiningSessionState.Error:
-      return { label: "Error", tone: "danger" };
+      return { label: "Errored", tone: "danger" };
     case MiningSessionState.Timeout:
       return { label: "Timeout", tone: "danger" };
     case MiningSessionState.Canceled:
@@ -124,6 +124,13 @@ export function getSessionStateMeta(
     default:
       return { label: "Unknown", tone: "neutral" };
   }
+}
+
+export function getSessionStateTitle(session: SessionDescriptor): string {
+  const label = getSessionStateMeta(session.state).label;
+  return session.error === undefined
+    ? label
+    : `${label}: ${session.error.message}`;
 }
 
 export function getProgressLabel(

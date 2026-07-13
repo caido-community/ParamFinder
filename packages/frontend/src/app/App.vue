@@ -33,8 +33,14 @@ const wordlistsStore = useWordlistsStore();
 const { showResult } = useActionResult();
 
 onMounted(async () => {
-  void settingsStore.initialize();
-  showResult(await wordlistsStore.load(), {
+  const [settingsResult, wordlistsResult] = await Promise.all([
+    settingsStore.initialize(),
+    wordlistsStore.load(),
+  ]);
+  showResult(settingsResult, {
+    errorPrefix: "Failed to load settings",
+  });
+  showResult(wordlistsResult, {
     errorPrefix: "Failed to load wordlists",
   });
 });

@@ -9,6 +9,7 @@ import {
   getProgressLabel,
   getSessionCapabilities,
   getSessionStateMeta,
+  getSessionStateTitle,
   getSessionStats,
 } from "./sessionStats";
 
@@ -70,5 +71,18 @@ describe("session stats", () => {
         createSession({ state: MiningSessionState.Completed }),
       ).canCancel,
     ).toBe(false);
+  });
+
+  it("describes persisted session errors for status popovers", () => {
+    const session = createSession({
+      state: MiningSessionState.Error,
+      error: { code: "IO", message: "Connection reset" },
+    });
+
+    expect(getSessionStateMeta(session.state)).toEqual({
+      label: "Errored",
+      tone: "danger",
+    });
+    expect(getSessionStateTitle(session)).toBe("Errored: Connection reset");
   });
 });

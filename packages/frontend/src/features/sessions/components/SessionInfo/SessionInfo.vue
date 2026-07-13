@@ -41,12 +41,6 @@ const progressPercent = computed(() =>
           <SessionStatusBadge />
           <SessionActions />
         </div>
-        <div
-          v-if="session.error"
-          class="shrink-0 rounded border border-danger-500/40 bg-danger-500/10 px-3 py-2 text-sm text-danger-200"
-        >
-          {{ session.error.message }}
-        </div>
         <SessionProgressBar />
         <div class="flex items-center justify-between gap-2 shrink-0">
           <SessionStats />

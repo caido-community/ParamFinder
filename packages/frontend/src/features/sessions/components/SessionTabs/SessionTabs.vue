@@ -2,6 +2,8 @@
 import Card from "primevue/card";
 import ContextMenu from "primevue/contextmenu";
 
+import SessionErrorPopover from "../SessionErrorPopover.vue";
+
 import { useSessionTabs } from "./useSessionTabs";
 
 defineOptions({ name: "SessionTabs" });
@@ -20,6 +22,7 @@ const {
   remove,
   onContextMenu,
   statusLabel,
+  statusTitle,
   statusDotClasses,
 } = useSessionTabs();
 </script>
@@ -40,10 +43,22 @@ const {
           @click="select(session.ref.sessionId)"
           @contextmenu="onContextMenu($event, session.ref.sessionId)"
         >
+          <SessionErrorPopover
+            v-if="session.error !== undefined"
+            :title="statusLabel(session)"
+            :message="session.error.message"
+          >
+            <span
+              class="w-1.5 h-1.5 rounded-full shrink-0"
+              :class="statusDotClasses(session)"
+            />
+          </SessionErrorPopover>
           <span
+            v-else
+            v-tooltip.top="statusTitle(session)"
             class="w-1.5 h-1.5 rounded-full shrink-0"
             :class="statusDotClasses(session)"
-            :title="statusLabel(session)"
+            :aria-label="statusTitle(session)"
           />
           <span class="font-mono text-xs truncate max-w-[180px]">
             {{ session.ref.sessionId }}
