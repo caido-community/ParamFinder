@@ -27,8 +27,18 @@ export function useSessionTabs() {
     const hasOtherSessions = store.list.some(
       (session) => session.ref.sessionId !== id,
     );
+    const session = store.list.find(
+      (candidate) => candidate.ref.sessionId === id,
+    );
+    const { canRerun } = getSessionCapabilities(session);
 
     return [
+      {
+        label: "Rerun",
+        icon: "fas fa-fw fa-redo",
+        disabled: !canRerun,
+        command: () => void actions.rerunActive(),
+      },
       {
         label: "Close",
         icon: "fas fa-fw fa-times",
