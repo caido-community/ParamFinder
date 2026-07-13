@@ -34,12 +34,6 @@ export function useSessionTabs() {
 
     return [
       {
-        label: "Rerun",
-        icon: "fas fa-fw fa-redo",
-        disabled: !canRerun,
-        command: () => void actions.rerunActive(),
-      },
-      {
         label: "Close",
         icon: "fas fa-fw fa-times",
         command: () => void actions.deleteSession(id),
@@ -49,6 +43,12 @@ export function useSessionTabs() {
         icon: "fas fa-fw fa-trash-can",
         disabled: !hasOtherSessions,
         command: () => void actions.deleteOtherSessions(id),
+      },
+      {
+        label: "Rerun",
+        icon: "fas fa-fw fa-redo",
+        disabled: !canRerun,
+        command: () => void actions.rerunActive(),
       },
     ];
   });
