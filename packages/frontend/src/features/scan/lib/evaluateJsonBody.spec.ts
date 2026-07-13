@@ -83,4 +83,21 @@ describe("advanced scan form helpers", () => {
       maxParametersAmount: 5,
     });
   });
+
+  it("normalizes an empty max parameters value", () => {
+    const values = {
+      attackType: "headers" as const,
+      customValue: "test",
+      jsonBodyPath: "",
+      cacheBusterParameter: false,
+      maxParametersAmount: null,
+    };
+
+    expect(createAdvancedScanCache(values)).toMatchObject({
+      maxParametersAmount: undefined,
+    });
+    expect(createAdvancedScanResult(values)).toMatchObject({
+      maxParametersAmount: undefined,
+    });
+  });
 });

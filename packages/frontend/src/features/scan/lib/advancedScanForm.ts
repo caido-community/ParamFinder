@@ -7,11 +7,15 @@ export const advancedScanCacheKey = "paramfinder.advanced-scan.cache";
 
 export type AdvancedScanFormValues = Omit<
   AdvancedScanOptions,
-  "customValue" | "jsonBodyPath" | "cacheBusterParameter"
+  | "customValue"
+  | "jsonBodyPath"
+  | "cacheBusterParameter"
+  | "maxParametersAmount"
 > & {
   customValue: string;
   jsonBodyPath: string;
   cacheBusterParameter: boolean;
+  maxParametersAmount: number | null | undefined;
 };
 
 export type AdvancedScanCache = Partial<AdvancedScanFormValues>;
@@ -53,6 +57,6 @@ function normalizeAdvancedScanValues(
         : undefined,
     cacheBusterParameter:
       values.attackType === "headers" ? values.cacheBusterParameter : undefined,
-    maxParametersAmount: values.maxParametersAmount,
+    maxParametersAmount: values.maxParametersAmount ?? undefined,
   };
 }

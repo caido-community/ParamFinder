@@ -22,7 +22,7 @@ export function useAdvancedScanForm() {
   const customValue = ref("");
   const jsonBodyPath = ref("");
   const cacheBusterParameter = ref(false);
-  const maxParametersAmount = ref<number | undefined>(undefined);
+  const maxParametersAmount = ref<number | null | undefined>(undefined);
   const bodyState = ref(evaluateJsonBody());
   const treeOpen = ref(false);
 
