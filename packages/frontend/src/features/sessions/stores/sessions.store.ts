@@ -117,8 +117,8 @@ export const useSessionsStore = defineStore("sessions", () => {
   const list = computed(() =>
     Object.values(sessions.value).sort(
       (left, right) =>
-        right.createdAt - left.createdAt ||
-        compareSessionIds(right.ref.sessionId, left.ref.sessionId),
+        left.createdAt - right.createdAt ||
+        compareSessionIds(left.ref.sessionId, right.ref.sessionId),
     ),
   );
 
@@ -301,7 +301,7 @@ export const useSessionsStore = defineStore("sessions", () => {
           break;
         }
       }
-      await loadActiveEntries();
+      await loadActiveEntries(true);
       return ok(undefined);
     } catch (err: unknown) {
       dispatch({ type: "PROJECT_LOAD_FINISHED", generation: token });
@@ -422,7 +422,6 @@ export const useSessionsStore = defineStore("sessions", () => {
       if (
         token !== generation.value ||
         descriptor.ref.projectId !== currentProjectId.value ||
-        activeSessionId.value !== descriptor.ref.sessionId ||
         caches.value[key]?.requestId !== loading.requestId
       ) {
         return ok(undefined);
@@ -453,7 +452,6 @@ export const useSessionsStore = defineStore("sessions", () => {
       if (
         token === generation.value &&
         descriptor.ref.projectId === currentProjectId.value &&
-        activeSessionId.value === descriptor.ref.sessionId &&
         caches.value[key]?.requestId === loading.requestId
       ) {
         dispatch({
@@ -471,21 +469,24 @@ export const useSessionsStore = defineStore("sessions", () => {
     }
   };
 
-  async function loadActiveEntries(): Promise<void> {
-    await Promise.all([
-      loadEntries("request", {
-        reset: true,
-        sort: { field: "sequence", direction: "asc" },
+  async function loadActiveEntries(force = false): Promise<void> {
+    const kinds: SessionEntryKind[] = ["request", "finding", "log"];
+    await Promise.all(
+      kinds.map(async (kind) => {
+        const state = activeEntryState(kind);
+        if (
+          (!force && state?.loading === true) ||
+          (!force && state !== undefined && state.stale !== true)
+        ) {
+          return;
+        }
+        await loadEntries(kind, {
+          reset: state !== undefined,
+          sort: state?.sort ?? { field: "sequence", direction: "asc" },
+          filter: state?.filter,
+        });
       }),
-      loadEntries("finding", {
-        reset: true,
-        sort: { field: "sequence", direction: "asc" },
-      }),
-      loadEntries("log", {
-        reset: true,
-        sort: { field: "sequence", direction: "asc" },
-      }),
-    ]);
+    );
   }
 
   async function refreshStaleEntries(): Promise<void> {

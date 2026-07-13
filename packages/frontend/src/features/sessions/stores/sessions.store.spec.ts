@@ -160,10 +160,27 @@ describe("sessions store reliability", () => {
     );
   });
 
-  it("keeps numeric session IDs newest-first when timestamps match", async () => {
+  it("keeps session tabs oldest-first so new sessions append", async () => {
+    const first = { ...descriptor("a", "2"), createdAt: 1 };
+    const second = { ...descriptor("a", "10"), createdAt: 2 };
+    sdkHolder.current = createSDK({
+      listSessions: vi.fn(async () => ok(snapshot("a", 1, [first]))),
+    });
+    const store = useSessionsStore();
+
+    await store.initialize();
+    store.acceptEnvelope(upsertEnvelope("a", 2, second));
+
+    expect(store.list.map((session) => session.ref.sessionId)).toEqual([
+      "2",
+      "10",
+    ]);
+  });
+
+  it("uses ascending numeric session IDs when timestamps match", async () => {
     sdkHolder.current = createSDK({
       listSessions: vi.fn(async () =>
-        ok(snapshot("a", 1, [descriptor("a", "2"), descriptor("a", "10")])),
+        ok(snapshot("a", 1, [descriptor("a", "10"), descriptor("a", "2")])),
       ),
     });
     const store = useSessionsStore();
@@ -171,9 +188,102 @@ describe("sessions store reliability", () => {
     await store.initialize();
 
     expect(store.list.map((session) => session.ref.sessionId)).toEqual([
-      "10",
       "2",
+      "10",
     ]);
+  });
+
+  it("reuses entry caches when switching between sessions", async () => {
+    const first = descriptor("a", "first");
+    const second = descriptor("a", "second");
+    const getSessionEntries = vi.fn(
+      async (query: { ref: { sessionId: string }; kind: string }) =>
+        ok({
+          items:
+            query.kind === "log"
+              ? [
+                  {
+                    sequence: 1,
+                    kind: "log" as const,
+                    value: `${query.ref.sessionId}-log`,
+                  },
+                ]
+              : [],
+          total: query.kind === "log" ? 1 : 0,
+          snapshotMaxSequence: query.kind === "log" ? 1 : 0,
+        }),
+    );
+    sdkHolder.current = createSDK({
+      listSessions: vi.fn(async () => ok(snapshot("a", 1, [first, second]))),
+      getSessionEntries,
+    });
+    const store = useSessionsStore();
+
+    await store.initialize();
+    expect(store.activeSession?.logs).toEqual(["first-log"]);
+
+    store.setActiveSession("second");
+    await vi.waitFor(() =>
+      expect(store.activeSession?.logs).toEqual(["second-log"]),
+    );
+    expect(getSessionEntries).toHaveBeenCalledTimes(6);
+
+    store.setActiveSession("first");
+    expect(store.activeSession?.logs).toEqual(["first-log"]);
+    await Promise.resolve();
+    expect(getSessionEntries).toHaveBeenCalledTimes(6);
+  });
+
+  it("finishes loading a session after switching away", async () => {
+    const first = descriptor("a", "first");
+    const second = descriptor("a", "second");
+    const refresh = deferred<
+      ReturnType<
+        typeof ok<{
+          items: Array<{ sequence: number; kind: "log"; value: string }>;
+          total: number;
+          snapshotMaxSequence: number;
+        }>
+      >
+    >();
+    let refreshing = false;
+    const getSessionEntries = vi.fn(
+      async (query: { ref: { sessionId: string }; kind: string }) => {
+        if (
+          refreshing &&
+          query.ref.sessionId === "first" &&
+          query.kind === "log"
+        ) {
+          return refresh.promise;
+        }
+        return ok({ items: [], total: 0, snapshotMaxSequence: 0 });
+      },
+    );
+    sdkHolder.current = createSDK({
+      listSessions: vi.fn(async () => ok(snapshot("a", 1, [first, second]))),
+      getSessionEntries,
+    });
+    const store = useSessionsStore();
+    await store.initialize();
+    refreshing = true;
+
+    const loading = store.loadEntries("log", {
+      reset: true,
+      sort: { field: "sequence", direction: "asc" },
+    });
+    store.setActiveSession("second");
+    refresh.resolve(
+      ok({
+        items: [{ sequence: 1, kind: "log", value: "loaded" }],
+        total: 1,
+        snapshotMaxSequence: 1,
+      }),
+    );
+    await loading;
+    refreshing = false;
+
+    store.setActiveSession("first");
+    expect(store.activeSession?.logs).toEqual(["loaded"]);
   });
 
   it("adds live requests and findings to the active tables", async () => {

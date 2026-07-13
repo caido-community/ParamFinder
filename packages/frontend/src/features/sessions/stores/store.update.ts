@@ -166,13 +166,9 @@ function setActiveSession(
       selectedRequestId: undefined,
       selectedFindingKey: undefined,
       requestDetails: {},
-      caches: {},
     };
   }
-  const prefix = `${descriptor.ref.projectId}\u0000${descriptor.ref.sessionId}\u0000`;
-  const caches = Object.fromEntries(
-    Object.entries(model.caches).filter(([key]) => key.startsWith(prefix)),
-  );
+  const caches = { ...model.caches };
   if (initializeEntries) {
     for (const kind of ENTRY_KINDS) {
       const key = cacheKey(descriptor.ref, kind);
@@ -208,36 +204,40 @@ function finishEntryLoad(
 
 function removeDescriptors(model: SessionsModel, refs: SessionRef[]) {
   const sessions = { ...model.sessions };
+  const caches = { ...model.caches };
   for (const ref of refs) {
-    if (ref.projectId === model.currentProjectId)
+    if (ref.projectId === model.currentProjectId) {
       delete sessions[ref.sessionId];
+      for (const kind of ENTRY_KINDS) {
+        delete caches[cacheKey(ref, kind)];
+      }
+    }
   }
   if (
     model.activeSessionId === undefined ||
     sessions[model.activeSessionId] !== undefined
   ) {
-    return { ...model, sessions };
+    return { ...model, sessions, caches };
   }
   const cleared = {
     ...model,
     sessions,
+    caches,
     activeSessionId: undefined,
     selectedRequestId: undefined,
     selectedFindingKey: undefined,
     requestDetails: {},
-    caches: {},
   };
   const next = Object.values(sessions)[0];
   return next === undefined ? cleared : selectNewSession(cleared, next);
 }
 
 function selectNewSession(model: SessionsModel, descriptor: SessionDescriptor) {
-  const caches = Object.fromEntries(
-    ENTRY_KINDS.map((kind) => [
-      cacheKey(descriptor.ref, kind),
-      createEntryCache(LIVE_ENTRY_SORT),
-    ]),
-  );
+  const caches = { ...model.caches };
+  for (const kind of ENTRY_KINDS) {
+    const key = cacheKey(descriptor.ref, kind);
+    caches[key] ??= createEntryCache(LIVE_ENTRY_SORT);
+  }
   return {
     ...model,
     activeSessionId: descriptor.ref.sessionId,
