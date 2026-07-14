@@ -1,11 +1,12 @@
+import { type ApiResult, ok } from "shared";
 import { computed } from "vue";
 
-import { useSessionActions } from "@/features/sessions/composables/useSessionActions";
 import {
   getSessionCapabilities,
   type SessionCapabilities,
 } from "@/features/sessions/lib/sessionStats";
 import { useSessionsStore } from "@/features/sessions/stores/sessions.store";
+import { useActionResult } from "@/shared/composables/useActionResult";
 
 type ActionKey = "pause" | "resume" | "rerun" | "cancel" | "delete";
 
@@ -14,12 +15,14 @@ export type ActionButton = {
   label: string;
   icon: string;
   severity: "secondary" | "info" | "danger";
-  handler: () => Promise<void>;
+  handler: () => Promise<ApiResult<void>>;
 };
+
+type ActionHandlers = Record<ActionKey, ActionButton["handler"]>;
 
 export function useActions() {
   const store = useSessionsStore();
-  const actions = useSessionActions();
+  const { showResult } = useActionResult();
 
   const session = computed(() => store.activeSession);
   const capabilities = computed(() => getSessionCapabilities(session.value));
@@ -27,28 +30,40 @@ export function useActions() {
     () => store.activeActionLoading !== undefined,
   );
 
-  const deleteActive = async () => {
+  const deleteActive = () => {
     const current = session.value;
-    if (current !== undefined) {
-      await actions.deleteSession(current.id);
-    }
+    return current === undefined
+      ? Promise.resolve(ok(undefined))
+      : store.deleteSession(current.id);
+  };
+
+  const handlers: ActionHandlers = {
+    pause: store.pauseActive,
+    resume: store.resumeActive,
+    rerun: store.rerunActive,
+    cancel: store.cancelActive,
+    delete: deleteActive,
   };
 
   const buttons = computed<ActionButton[]>(() =>
-    buildButtons(capabilities.value, actions, deleteActive),
+    buildButtons(capabilities.value, handlers),
   );
+
+  const execute = async (button: ActionButton) => {
+    showResult(await button.handler());
+  };
 
   return {
     activeActionLoading: computed(() => store.activeActionLoading),
     controlsDisabled,
     buttons,
+    execute,
   };
 }
 
 function buildButtons(
   capabilities: SessionCapabilities,
-  actions: ReturnType<typeof useSessionActions>,
-  deleteActive: () => Promise<void>,
+  handlers: ActionHandlers,
 ): ActionButton[] {
   const candidates: (ActionButton & { show: boolean })[] = [
     {
@@ -57,7 +72,7 @@ function buildButtons(
       label: "Pause",
       icon: "fas fa-pause",
       severity: "secondary",
-      handler: actions.pauseActive,
+      handler: handlers.pause,
     },
     {
       show: capabilities.isPaused,
@@ -65,7 +80,7 @@ function buildButtons(
       label: "Resume",
       icon: "fas fa-play",
       severity: "info",
-      handler: actions.resumeActive,
+      handler: handlers.resume,
     },
     {
       show: capabilities.canRerun,
@@ -73,7 +88,7 @@ function buildButtons(
       label: "Rerun",
       icon: "fas fa-redo",
       severity: "info",
-      handler: actions.rerunActive,
+      handler: handlers.rerun,
     },
     {
       show: capabilities.canCancel,
@@ -81,7 +96,7 @@ function buildButtons(
       label: "Cancel",
       icon: "fas fa-stop",
       severity: "danger",
-      handler: actions.cancelActive,
+      handler: handlers.cancel,
     },
     {
       show: true,
@@ -89,7 +104,7 @@ function buildButtons(
       label: "Delete",
       icon: "fas fa-trash",
       severity: "danger",
-      handler: deleteActive,
+      handler: handlers.delete,
     },
   ];
 

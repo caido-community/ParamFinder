@@ -5,7 +5,8 @@ import { useActions } from "./useActions";
 
 defineOptions({ name: "SessionActions" });
 
-const { activeActionLoading, controlsDisabled, buttons } = useActions();
+const { activeActionLoading, controlsDisabled, buttons, execute } =
+  useActions();
 </script>
 
 <template>
@@ -20,7 +21,7 @@ const { activeActionLoading, controlsDisabled, buttons } = useActions();
       outlined
       :loading="activeActionLoading === button.key"
       :disabled="controlsDisabled"
-      @click="button.handler"
+      @click="execute(button)"
     />
   </div>
 </template>

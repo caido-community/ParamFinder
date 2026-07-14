@@ -1,10 +1,10 @@
+import { useClipboard } from "@vueuse/core";
 import type { Sequenced, SessionFinding } from "shared";
 import { computed } from "vue";
 
 import { getFindingKey } from "@/features/sessions/lib/sessionRows";
 import { useSessionsStore } from "@/features/sessions/stores/sessions.store";
 import { useSDK } from "@/plugins/sdk";
-import { useCopyText } from "@/shared/composables/useCopyText";
 import { useDownloadText } from "@/shared/composables/useDownloadText";
 import { toErrorMessage } from "@/shared/utils/backend";
 
@@ -19,7 +19,7 @@ export function useResults() {
   const canLoadMore = computed(
     () => store.activeEntryState("finding")?.nextCursor !== undefined,
   );
-  const { copyText } = useCopyText();
+  const { copy: copyText } = useClipboard();
   const { downloadText } = useDownloadText("paramfinder-findings.txt");
 
   const copy = async () => {

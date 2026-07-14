@@ -1,9 +1,8 @@
-import { useScroll } from "@vueuse/core";
+import { useClipboard, useScroll } from "@vueuse/core";
 import { computed, nextTick, ref, watch } from "vue";
 
 import { useSessionsStore } from "@/features/sessions/stores/sessions.store";
 import { useSDK } from "@/plugins/sdk";
-import { useCopyText } from "@/shared/composables/useCopyText";
 import { toErrorMessage } from "@/shared/utils/backend";
 
 export function useLogs() {
@@ -17,7 +16,7 @@ export function useLogs() {
   );
   const scrollRef = ref<HTMLElement>();
   const { arrivedState } = useScroll(scrollRef, { offset: { bottom: 4 } });
-  const { copyText } = useCopyText();
+  const { copy: copyText } = useClipboard();
 
   watch(
     () => logs.value.length,

@@ -3,14 +3,9 @@ import { type ApiResult, type AttackType, error, type Wordlist } from "shared";
 import { computed, readonly, ref } from "vue";
 
 import {
-  clearWordlists,
-  deleteWordlist,
   importRemoteWordlist,
-  importTextWordlist,
   loadWordlists,
   runWordlistMutation,
-  setWordlistAttackTypes,
-  setWordlistEnabled,
 } from "./store.effects";
 import {
   initialModel,
@@ -51,7 +46,7 @@ export const useWordlistsStore = defineStore("wordlists", () => {
 
   const importText = (filename: string, content: string) =>
     mutate({ type: "import", filename }, () =>
-      importTextWordlist(sdk, filename, content),
+      sdk.backend.importWordlist(content, filename),
     );
 
   const importRemote = (filename: string, url: string) =>
@@ -61,18 +56,19 @@ export const useWordlistsStore = defineStore("wordlists", () => {
 
   const toggle = (wordlist: Wordlist) =>
     mutate({ type: "toggle", path: wordlist.path }, () =>
-      setWordlistEnabled(sdk, wordlist),
+      sdk.backend.setWordlistEnabled(wordlist.path, !wordlist.enabled),
     );
 
   const updateAttackTypes = (wordlist: Wordlist, attackTypes: AttackType[]) =>
     mutate({ type: "attackTypes", path: wordlist.path, attackTypes }, () =>
-      setWordlistAttackTypes(sdk, wordlist.path, attackTypes),
+      sdk.backend.setWordlistAttackTypes(wordlist.path, attackTypes),
     );
 
   const remove = (path: string) =>
-    mutate({ type: "remove", path }, () => deleteWordlist(sdk, path));
+    mutate({ type: "remove", path }, () => sdk.backend.deleteWordlist(path));
 
-  const clear = () => mutate({ type: "clear" }, () => clearWordlists(sdk));
+  const clear = () =>
+    mutate({ type: "clear" }, () => sdk.backend.clearWordlists());
 
   return {
     state: readonly(model),

@@ -110,7 +110,7 @@ export function getSessionStateMeta(
     case MiningSessionState.Learning:
       return { label: "Learning", tone: "info" };
     case MiningSessionState.Paused:
-      return { label: "Paused", tone: "warning" };
+      return { label: "Paused", tone: "neutral" };
     case MiningSessionState.Completed:
       return { label: "Completed", tone: "success" };
     case MiningSessionState.Error:

@@ -61,6 +61,10 @@ describe("session stats", () => {
   });
 
   it("maps states and capabilities", () => {
+    expect(getSessionStateMeta(MiningSessionState.Paused)).toEqual({
+      label: "Paused",
+      tone: "neutral",
+    });
     expect(getSessionStateMeta(MiningSessionState.Timeout)).toEqual({
       label: "Timeout",
       tone: "danger",

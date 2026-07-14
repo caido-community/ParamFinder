@@ -3,13 +3,18 @@ import { storeToRefs } from "pinia";
 import InputNumber from "primevue/inputnumber";
 import type { Settings } from "shared";
 
-import { useSettingsActions } from "../composables/useSettingsActions";
-
 import { useSettingsStore } from "@/features/settings/stores/store";
+import { useActionResult } from "@/shared/composables/useActionResult";
 
 const settingsStore = useSettingsStore();
-const { updateSettings } = useSettingsActions();
+const { showResult } = useActionResult();
 const { data, saving } = storeToRefs(settingsStore);
+
+const updateSettings = async (updates: Partial<Settings>) => {
+  showResult(await settingsStore.update(updates), {
+    errorPrefix: "Failed to update settings",
+  });
+};
 
 const setField = <K extends keyof Settings>(field: K, value: Settings[K]) => {
   void updateSettings({ [field]: value });

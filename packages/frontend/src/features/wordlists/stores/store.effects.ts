@@ -1,10 +1,4 @@
-import {
-  type ApiResult,
-  type AttackType,
-  error,
-  ok,
-  type Wordlist,
-} from "shared";
+import { type ApiResult, error, ok, type Wordlist } from "shared";
 
 import type { WordlistMutation, WordlistsMessage } from "./store.model";
 
@@ -66,12 +60,6 @@ export async function fetchRemoteWordlist(
   }
 }
 
-export const importTextWordlist = (
-  sdk: FrontendSDK,
-  filename: string,
-  content: string,
-) => sdk.backend.importWordlist(content, filename);
-
 export async function importRemoteWordlist(
   sdk: FrontendSDK,
   filename: string,
@@ -82,21 +70,6 @@ export async function importRemoteWordlist(
     ? sdk.backend.importWordlist(download.value, filename)
     : download;
 }
-
-export const setWordlistEnabled = (sdk: FrontendSDK, wordlist: Wordlist) =>
-  sdk.backend.setWordlistEnabled(wordlist.path, !wordlist.enabled);
-
-export const setWordlistAttackTypes = (
-  sdk: FrontendSDK,
-  path: string,
-  attackTypes: AttackType[],
-) => sdk.backend.setWordlistAttackTypes(path, attackTypes);
-
-export const deleteWordlist = (sdk: FrontendSDK, path: string) =>
-  sdk.backend.deleteWordlist(path);
-
-export const clearWordlists = (sdk: FrontendSDK) =>
-  sdk.backend.clearWordlists();
 
 type Dispatch = (message: WordlistsMessage) => void;
 
