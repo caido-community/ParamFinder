@@ -2,9 +2,11 @@
 
 import { mount } from "@vue/test-utils";
 import { describe, expect, it, vi } from "vitest";
-import { nextTick } from "vue";
+import { type Component, nextTick } from "vue";
 
 import VirtualSortTable from "./VirtualSortTable.vue";
+
+const VirtualSortTableForTest = VirtualSortTable as Component;
 
 const virtualizer = vi.hoisted(() => ({
   getTotalSize: vi.fn(() => 0),
@@ -26,7 +28,7 @@ const rows = [
 
 describe("VirtualSortTable DOM behavior", () => {
   it("remeasures the virtual rows when the list grows", async () => {
-    const wrapper = mount(VirtualSortTable, {
+    const wrapper = mount(VirtualSortTableForTest, {
       props: {
         rows,
         columns: [
@@ -36,7 +38,6 @@ describe("VirtualSortTable DOM behavior", () => {
         keyField: "requestId",
         emptyIcon: "fas fa-inbox",
         emptyMessage: "No requests",
-        serverSide: true,
       },
     });
 
@@ -49,7 +50,7 @@ describe("VirtualSortTable DOM behavior", () => {
   });
 
   it("emits backend sort direction and requests the next page near the end", async () => {
-    const wrapper = mount(VirtualSortTable, {
+    const wrapper = mount(VirtualSortTableForTest, {
       props: {
         rows,
         columns: [
@@ -57,10 +58,8 @@ describe("VirtualSortTable DOM behavior", () => {
           { field: "status", label: "Status", width: "80px" },
         ],
         keyField: "requestId",
-        initialSortColumn: "requestId",
         emptyIcon: "fas fa-inbox",
         emptyMessage: "No requests",
-        serverSide: true,
       },
     });
 
@@ -68,8 +67,8 @@ describe("VirtualSortTable DOM behavior", () => {
     await idHeader?.trigger("click");
     await idHeader?.trigger("click");
     expect(wrapper.emitted("sort-change")).toEqual([
-      ["requestId", "desc"],
       ["requestId", "asc"],
+      ["requestId", "desc"],
     ]);
 
     const scrollBody = wrapper.find(".table-body-gutter");

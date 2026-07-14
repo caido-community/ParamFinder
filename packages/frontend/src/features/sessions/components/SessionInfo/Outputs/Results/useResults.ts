@@ -1,9 +1,11 @@
 import { useClipboard } from "@vueuse/core";
+import { storeToRefs } from "pinia";
 import type { Sequenced, SessionFinding } from "shared";
 import { computed } from "vue";
 
 import { getFindingKey } from "@/features/sessions/lib/sessionRows";
 import { useSessionsStore } from "@/features/sessions/stores/sessions.store";
+import { useSessionViewStore } from "@/features/sessions/stores/sessionView.store";
 import { useSDK } from "@/plugins/sdk";
 import { useDownloadText } from "@/shared/composables/useDownloadText";
 import { toErrorMessage } from "@/shared/utils/backend";
@@ -11,6 +13,8 @@ import { toErrorMessage } from "@/shared/utils/backend";
 export function useResults() {
   const sdk = useSDK();
   const store = useSessionsStore();
+  const viewStore = useSessionViewStore();
+  const { selectedFindingKey } = storeToRefs(viewStore);
 
   const findings = computed(() => store.activeSession?.findings ?? []);
   const findingCount = computed(
@@ -71,11 +75,11 @@ export function useResults() {
   const loadMore = () => void store.loadEntries("finding");
 
   const openFinding = (finding: Sequenced<SessionFinding>) => {
-    store.openFinding(finding.requestId, getFindingKey(finding));
+    viewStore.openFinding(finding.requestId, getFindingKey(finding));
   };
 
   return {
-    store,
+    selectedFindingKey,
     findings,
     findingCount,
     canLoadMore,

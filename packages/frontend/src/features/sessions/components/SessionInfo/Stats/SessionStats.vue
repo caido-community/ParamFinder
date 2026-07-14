@@ -1,32 +1,22 @@
 <script setup lang="ts">
 import { computed } from "vue";
 
-import { getSessionStats } from "@/features/sessions/lib/sessionStats";
-import { useSessionsStore } from "@/features/sessions/stores/sessions.store";
+import type { SessionStats } from "@/features/sessions/lib/sessionStats";
 
 defineOptions({ name: "SessionStats" });
 
-const store = useSessionsStore();
-const stats = computed(() => getSessionStats(store.activeSession));
+const { stats } = defineProps<{ stats: SessionStats }>();
 
-const items = computed(() => {
-  const value = stats.value;
-  if (value === undefined) {
-    return [];
-  }
-
-  return [
-    { label: "sent", value: value.requestsSent, highlight: false },
-    { label: "tested", value: value.parametersTested, highlight: false },
-    { label: "left", value: value.remaining, highlight: false },
-    { label: "found", value: value.findings, highlight: value.findings > 0 },
-  ];
-});
+const items = computed(() => [
+  { label: "sent", value: stats.requestsSent, highlight: false },
+  { label: "tested", value: stats.parametersTested, highlight: false },
+  { label: "left", value: stats.remaining, highlight: false },
+  { label: "found", value: stats.findings, highlight: stats.findings > 0 },
+]);
 </script>
 
 <template>
   <div
-    v-if="stats !== undefined"
     class="flex flex-wrap items-center gap-x-3 gap-y-1 text-sm leading-snug text-surface-500"
   >
     <span v-for="item in items" :key="item.label">

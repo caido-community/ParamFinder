@@ -38,12 +38,12 @@ const progressPercent = computed(() =>
     <template #content>
       <div class="flex flex-1 min-h-0 flex-col gap-3 p-3">
         <div class="flex items-center justify-between gap-2 shrink-0">
-          <SessionStatusBadge />
+          <SessionStatusBadge :session="session" />
           <SessionActions />
         </div>
-        <SessionProgressBar />
+        <SessionProgressBar :progress="stats.progress" />
         <div class="flex items-center justify-between gap-2 shrink-0">
-          <SessionStats />
+          <SessionStats :stats="stats" />
           <span
             class="shrink-0 text-sm tabular-nums font-medium text-surface-100"
           >

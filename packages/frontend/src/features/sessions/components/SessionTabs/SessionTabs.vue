@@ -14,7 +14,7 @@ const plainCardPt = {
 };
 
 const {
-  store,
+  activeSessionId,
   sessions,
   contextMenu,
   menuItems,
@@ -36,7 +36,7 @@ const {
           :key="session.ref.sessionId"
           class="group flex items-center gap-3 cursor-pointer px-3 py-1.5 rounded text-sm transition-all border bg-surface-900"
           :class="
-            store.activeSessionId === session.ref.sessionId
+            activeSessionId === session.ref.sessionId
               ? 'border-secondary-400 text-surface-0'
               : 'border-surface-700 text-surface-200 hover:border-surface-600'
           "

@@ -1,22 +1,28 @@
+import { storeToRefs } from "pinia";
 import type { SessionEntrySort } from "shared";
 import { computed } from "vue";
 
-import { createRequestRows } from "@/features/sessions/lib/sessionRows";
+import {
+  createRequestRows,
+  type RequestRow,
+} from "@/features/sessions/lib/sessionRows";
 import { useSessionsStore } from "@/features/sessions/stores/sessions.store";
-import type {
-  VirtualSortColumn,
-  VirtualSortRow,
-} from "@/shared/components/virtualSortTable";
+import { useSessionViewStore } from "@/features/sessions/stores/sessionView.store";
+import type { VirtualSortColumn } from "@/shared/components/virtualSortTable";
 
 export function useRequestList() {
-  const store = useSessionsStore();
+  const sessionsStore = useSessionsStore();
+  const viewStore = useSessionViewStore();
+  const { selectedRequestId } = storeToRefs(viewStore);
 
-  const requests = computed(() => createRequestRows(store.activeSession));
+  const requests = computed(() =>
+    createRequestRows(sessionsStore.activeSession),
+  );
   const loading = computed(
-    () => store.activeEntryState("request")?.loading ?? false,
+    () => sessionsStore.activeEntryState("request")?.loading ?? false,
   );
 
-  const columns: VirtualSortColumn[] = [
+  const columns: VirtualSortColumn<RequestRow>[] = [
     { field: "requestId", label: "ID", width: "64px", cellClass: "font-mono" },
     { field: "status", label: "Status", width: "76px" },
     { field: "length", label: "Length", width: "88px" },
@@ -24,26 +30,26 @@ export function useRequestList() {
       field: "time",
       label: "Time",
       width: "84px",
-      format: (row) => `${row.time ?? ""}ms`,
+      format: (row) => `${row.time}ms`,
     },
     { field: "parametersTested", label: "Parameters", width: "104px" },
     { field: "context", label: "Context", width: "96px" },
   ];
 
-  const onRowClick = (event: MouseEvent, row: VirtualSortRow) => {
+  const onRowClick = (event: MouseEvent, row: RequestRow) => {
     if (event.button !== 0) {
       return;
     }
 
-    const requestId = String(row.requestId ?? "");
-    if (store.selectedRequestId === requestId) {
-      store.setSelectedRequest(undefined);
+    const requestId = row.requestId;
+    if (selectedRequestId.value === requestId) {
+      viewStore.setSelectedRequest(undefined);
     } else {
-      store.setSelectedRequest(requestId);
+      viewStore.setSelectedRequest(requestId);
     }
   };
 
-  const fieldMap: Record<string, SessionEntrySort["field"]> = {
+  const fieldMap: Record<keyof RequestRow, SessionEntrySort["field"]> = {
     requestId: "requestId",
     status: "responseStatus",
     length: "responseLength",
@@ -52,14 +58,22 @@ export function useRequestList() {
     context: "context",
   };
 
-  const sort = (field: string, direction: "asc" | "desc") => {
-    void store.loadEntries("request", {
+  const sort = (field: keyof RequestRow, direction: "asc" | "desc") => {
+    void sessionsStore.loadEntries("request", {
       reset: true,
-      sort: { field: fieldMap[field] ?? "sequence", direction },
+      sort: { field: fieldMap[field], direction },
     });
   };
 
-  const loadMore = () => void store.loadEntries("request");
+  const loadMore = () => void sessionsStore.loadEntries("request");
 
-  return { store, requests, columns, loading, onRowClick, sort, loadMore };
+  return {
+    selectedRequestId,
+    requests,
+    columns,
+    loading,
+    onRowClick,
+    sort,
+    loadMore,
+  };
 }

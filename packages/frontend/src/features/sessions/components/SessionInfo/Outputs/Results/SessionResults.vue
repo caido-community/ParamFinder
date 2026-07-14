@@ -6,7 +6,7 @@ import EmptyMessage from "@/shared/components/EmptyMessage.vue";
 defineOptions({ name: "SessionResults" });
 
 const {
-  store,
+  selectedFindingKey,
   findings,
   findingCount,
   canLoadMore,
@@ -57,7 +57,7 @@ const {
           type="button"
           class="w-full rounded px-2 py-1 text-left transition-colors hover:bg-surface-800 focus-visible:outline focus-visible:outline-1 focus-visible:outline-secondary-400"
           :class="
-            store.selectedFindingKey === getFindingKey(finding)
+            selectedFindingKey === getFindingKey(finding)
               ? 'bg-highlight text-surface-0'
               : 'text-surface-200'
           "

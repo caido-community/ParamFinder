@@ -1,33 +1,16 @@
 <script setup lang="ts">
 import ContextMenu from "primevue/contextmenu";
-import { ref } from "vue";
+import { computed, ref } from "vue";
 
-import { type HttpEditorType, useHttpEditor } from "./useHttpEditor";
+import { type HttpEditorSource, useHttpEditor } from "./useHttpEditor";
 
 defineOptions({ name: "HTTPEditor" });
 
-const {
-  type,
-  raw,
-  host = undefined,
-  port = undefined,
-  isTls = undefined,
-} = defineProps<{
-  type: HttpEditorType;
-  raw: string;
-  host?: string;
-  port?: number;
-  isTls?: boolean;
-}>();
+const { source: editorSource } = defineProps<{ source: HttpEditorSource }>();
 
 const root = ref<HTMLElement>();
-const { contextMenu, menuItems, onContextMenu } = useHttpEditor(root, {
-  type,
-  raw: () => raw,
-  host: () => host,
-  port: () => port,
-  isTls: () => isTls,
-});
+const source = computed(() => editorSource);
+const { contextMenu, menuItems, onContextMenu } = useHttpEditor(root, source);
 </script>
 
 <template>
@@ -36,5 +19,9 @@ const { contextMenu, menuItems, onContextMenu } = useHttpEditor(root, {
     class="flex-1 min-h-0 overflow-hidden"
     @contextmenu="onContextMenu"
   />
-  <ContextMenu v-if="type === 'request'" ref="contextMenu" :model="menuItems" />
+  <ContextMenu
+    v-if="editorSource.type === 'request'"
+    ref="contextMenu"
+    :model="menuItems"
+  />
 </template>

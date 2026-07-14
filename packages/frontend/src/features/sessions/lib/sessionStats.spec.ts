@@ -2,6 +2,7 @@ import {
   MiningSessionPhase,
   MiningSessionState,
   type SessionDescriptor,
+  type SessionLifecycle,
 } from "shared";
 import { describe, expect, it } from "vitest";
 
@@ -13,13 +14,17 @@ import {
   getSessionStats,
 } from "./sessionStats";
 
+type SessionBase = Omit<SessionDescriptor, keyof SessionLifecycle>;
+
 function createSession(
-  overrides: Partial<SessionDescriptor> = {},
+  overrides: Partial<SessionBase> = {},
+  lifecycle: SessionLifecycle = {
+    state: MiningSessionState.Running,
+    phase: MiningSessionPhase.Discovery,
+  },
 ): SessionDescriptor {
   return {
     ref: { projectId: "project-1", sessionId: "session-1" },
-    state: MiningSessionState.Running,
-    phase: MiningSessionPhase.Discovery,
     totalParametersAmount: 10,
     totalLearnRequests: 3,
     parametersSent: 0,
@@ -29,6 +34,7 @@ function createSession(
     createdAt: 1,
     updatedAt: 1,
     ...overrides,
+    ...lifecycle,
   };
 }
 
@@ -50,10 +56,13 @@ describe("session stats", () => {
   });
 
   it("uses learn request count while learning", () => {
-    const session = createSession({
-      phase: MiningSessionPhase.Learning,
-      requestsSent: 1,
-    });
+    const session = createSession(
+      { requestsSent: 1 },
+      {
+        state: MiningSessionState.Learning,
+        phase: MiningSessionPhase.Learning,
+      },
+    );
     const stats = getSessionStats(session);
 
     expect(stats).toMatchObject({ progressCurrent: 1, progressTotal: 3 });
@@ -72,16 +81,26 @@ describe("session stats", () => {
     expect(getSessionCapabilities(createSession()).canCancel).toBe(true);
     expect(
       getSessionCapabilities(
-        createSession({ state: MiningSessionState.Completed }),
+        createSession(
+          {},
+          {
+            state: MiningSessionState.Completed,
+            phase: MiningSessionPhase.Discovery,
+          },
+        ),
       ).canCancel,
     ).toBe(false);
   });
 
   it("describes persisted session errors for status popovers", () => {
-    const session = createSession({
-      state: MiningSessionState.Error,
-      error: { code: "IO", message: "Connection reset" },
-    });
+    const session = createSession(
+      {},
+      {
+        state: MiningSessionState.Error,
+        phase: MiningSessionPhase.Discovery,
+        error: { code: "IO", message: "Connection reset" },
+      },
+    );
 
     expect(getSessionStateMeta(session.state)).toEqual({
       label: "Errored",

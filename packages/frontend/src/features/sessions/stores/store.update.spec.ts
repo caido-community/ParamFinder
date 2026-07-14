@@ -55,7 +55,6 @@ describe("sessions update", () => {
     expect(hydrated).toMatchObject({
       hydrated: true,
       revision: 7,
-      activeSessionId: "hydrated",
     });
 
     expect(
@@ -68,18 +67,14 @@ describe("sessions update", () => {
       {
         ...initialModel,
         currentProjectId: "project",
-        activeSessionId: "active",
         sessions: { active: descriptor("active") },
         actionLoading: { active: "pause" },
-        requestDetails: { request: { loading: true } },
       },
       { type: "PROJECT_LOAD_STARTED", projectId: "project" },
     );
 
     expect(loading.sessions).toHaveProperty("active");
-    expect(loading.activeSessionId).toBe("active");
     expect(loading.actionLoading).toEqual({});
-    expect(loading.requestDetails).toEqual({});
   });
 
   it("applies only the next project revision", () => {
@@ -110,27 +105,26 @@ describe("sessions update", () => {
       },
     });
     expect(next.revision).toBe(2);
-    expect(next.activeSessionId).toBe("next");
+    expect(next.sessions).toHaveProperty("next");
   });
 
-  it("clears selection when the active session is deleted", () => {
+  it("removes descriptors and their cached entries", () => {
     const session = descriptor("active");
-    const model = {
-      ...initialModel,
-      currentProjectId: "project",
-      sessions: { active: session },
-      activeSessionId: "active",
-      selectedRequestId: "request",
-      selectedFindingKey: "finding",
-    };
+    const initialized = update(
+      {
+        ...initialModel,
+        currentProjectId: "project",
+        sessions: { active: session },
+      },
+      { type: "INITIALIZE_ENTRY_CACHES", ref: session.ref },
+    );
 
-    const next = update(model, {
+    const next = update(initialized, {
       type: "REMOVE_DESCRIPTORS",
       refs: [session.ref],
     });
-    expect(next.activeSessionId).toBeUndefined();
-    expect(next.selectedRequestId).toBeUndefined();
-    expect(next.selectedFindingKey).toBeUndefined();
+    expect(next.sessions).toEqual({});
+    expect(next.caches).toEqual({});
   });
 
   it("transitions entry loading, success, and failure by request ID", () => {
@@ -180,34 +174,19 @@ describe("sessions update", () => {
     });
   });
 
-  it("keeps selection and request details as explicit transitions", () => {
-    const selected = update(initialModel, {
-      type: "SELECT_FINDING",
-      requestId: "request",
-      findingKey: "finding",
+  it("initializes all entry caches without replacing existing state", () => {
+    const session = descriptor("active");
+    const initialized = update(initialModel, {
+      type: "INITIALIZE_ENTRY_CACHES",
+      ref: session.ref,
     });
-    expect(selected).toMatchObject({
-      selectedRequestId: "request",
-      selectedFindingKey: "finding",
-    });
-
-    const loading = update(selected, {
-      type: "REQUEST_DETAIL_STARTED",
-      requestId: "request",
-    });
-    const failed = update(loading, {
-      type: "REQUEST_DETAIL_FAILED",
-      requestId: "request",
-      error: "failed",
-    });
-    expect(failed.requestDetails.request).toEqual({
-      loading: false,
-      error: "failed",
+    const repeated = update(initialized, {
+      type: "INITIALIZE_ENTRY_CACHES",
+      ref: session.ref,
     });
 
-    const reset = update(failed, { type: "SELECT_REQUEST", id: "other" });
-    expect(reset.requestDetails).toEqual({});
-    expect(reset.selectedFindingKey).toBeUndefined();
+    expect(Object.keys(initialized.caches)).toHaveLength(3);
+    expect(repeated.caches).toEqual(initialized.caches);
   });
 
   it("locks one action per session until the matching completion", () => {

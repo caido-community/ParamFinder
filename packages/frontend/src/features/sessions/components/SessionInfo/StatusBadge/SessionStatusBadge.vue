@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { SessionDescriptor } from "shared";
 import { computed } from "vue";
 
 import SessionErrorPopover from "../../SessionErrorPopover.vue";
@@ -8,19 +9,15 @@ import {
   getSessionStateMeta,
   statusToneClasses,
 } from "@/features/sessions/lib/sessionStats";
-import { useSessionsStore } from "@/features/sessions/stores/sessions.store";
 
 defineOptions({ name: "SessionStatusBadge" });
 
-const store = useSessionsStore();
+const { session } = defineProps<{ session: SessionDescriptor }>();
 
-const session = computed(() => store.activeSession);
-const stateMeta = computed(() => getSessionStateMeta(session.value?.state));
-const isRunning = computed(
-  () => getSessionCapabilities(session.value).isRunning,
-);
+const stateMeta = computed(() => getSessionStateMeta(session.state));
+const isRunning = computed(() => getSessionCapabilities(session).isRunning);
 const dotClass = computed(() => statusToneClasses[stateMeta.value.tone]);
-const errorMessage = computed(() => session.value?.error?.message);
+const errorMessage = computed(() => session.error?.message);
 </script>
 
 <template>

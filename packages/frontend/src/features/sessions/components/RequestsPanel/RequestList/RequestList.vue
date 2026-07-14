@@ -5,8 +5,15 @@ import VirtualSortTable from "@/shared/components/VirtualSortTable.vue";
 
 defineOptions({ name: "RequestList" });
 
-const { store, requests, columns, loading, onRowClick, sort, loadMore } =
-  useRequestList();
+const {
+  selectedRequestId,
+  requests,
+  columns,
+  loading,
+  onRowClick,
+  sort,
+  loadMore,
+} = useRequestList();
 </script>
 
 <template>
@@ -14,10 +21,9 @@ const { store, requests, columns, loading, onRowClick, sort, loadMore } =
     :rows="requests"
     :columns="columns"
     key-field="requestId"
-    :selected-key="store.selectedRequestId"
+    :selected-key="selectedRequestId"
     empty-icon="fas fa-inbox"
     empty-message="No requests recorded yet."
-    server-side
     :loading="loading"
     @row-click="onRowClick"
     @sort-change="sort"

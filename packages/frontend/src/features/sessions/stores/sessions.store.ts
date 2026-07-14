@@ -1,4 +1,4 @@
-import { defineStore } from "pinia";
+import { defineStore, storeToRefs } from "pinia";
 import {
   type ApiResult,
   compareSessionIds,
@@ -23,6 +23,7 @@ import { computed, readonly, ref } from "vue";
 import { loadRequestResponse } from "../lib/loadRequestResponse";
 
 import { createEntryCache } from "./sessionEntryCache";
+import { useSessionViewStore } from "./sessionView.store";
 import {
   cancelSession,
   deleteSessions,
@@ -37,7 +38,6 @@ import {
   cacheKey,
   initialModel,
   type SessionAction,
-  type SessionRequestsTab,
   type SessionsModel,
   type SessionView,
 } from "./store.model";
@@ -45,8 +45,6 @@ import { type SessionsMessage, update as updateModel } from "./store.update";
 
 import { useSDK } from "@/plugins/sdk";
 import { toErrorMessage } from "@/shared/utils/backend";
-
-export type { SessionRequestsTab } from "./store.model";
 
 const PAGE_SIZE = 250;
 function entryValues(
@@ -84,12 +82,13 @@ function entryValues(
 
 export const useSessionsStore = defineStore("sessions", () => {
   const sdk = useSDK();
+  const viewStore = useSessionViewStore();
+  const { activeSessionId, selectedRequestId } = storeToRefs(viewStore);
   const model = ref<SessionsModel>({
     ...initialModel,
     sessions: {},
     caches: {},
     actionLoading: {},
-    requestDetails: {},
   });
 
   const sessions = computed(() => model.value.sessions);
@@ -98,12 +97,7 @@ export const useSessionsStore = defineStore("sessions", () => {
   const revision = computed(() => model.value.revision);
   const hydrated = computed(() => model.value.hydrated);
   const noProjectSelected = computed(() => model.value.noProjectSelected);
-  const activeSessionId = computed(() => model.value.activeSessionId);
-  const selectedRequestId = computed(() => model.value.selectedRequestId);
-  const selectedFindingKey = computed(() => model.value.selectedFindingKey);
-  const requestsTab = computed(() => model.value.requestsTab);
   const actionLoading = computed(() => model.value.actionLoading);
-  const requestDetails = computed(() => model.value.requestDetails);
   const generation = computed(() => model.value.generation);
 
   const dispatch = (message: SessionsMessage) => {
@@ -167,13 +161,13 @@ export const useSessionsStore = defineStore("sessions", () => {
   };
 
   const removeDescriptors = (refs: SessionRef[]) => {
-    const previousActive = activeSessionId.value;
+    const activeRemoved = refs.some(
+      (ref) => ref.sessionId === activeSessionId.value,
+    );
     dispatch({ type: "REMOVE_DESCRIPTORS", refs });
-    if (
-      previousActive !== activeSessionId.value &&
-      activeSessionId.value !== undefined
-    ) {
-      void loadActiveEntries();
+    if (activeRemoved) {
+      const nextId = Object.values(sessions.value)[0]?.ref.sessionId;
+      setActiveSession(nextId);
     }
   };
 
@@ -190,9 +184,16 @@ export const useSessionsStore = defineStore("sessions", () => {
 
     let refreshTerminal = false;
     let activeDeleted = false;
+    let newDescriptor: SessionDescriptor | undefined;
     for (const change of envelope.changes) {
+      if (
+        change.type === "upsert" &&
+        sessions.value[change.session.ref.sessionId] === undefined
+      ) {
+        newDescriptor = change.session;
+      }
       if (change.type === "terminal") {
-        const terminalError = change.error ?? change.session.error;
+        const terminalError = change.session.error;
         if (terminalError !== undefined) {
           sdk.window.showToast(terminalError.message, {
             variant: "error",
@@ -210,8 +211,11 @@ export const useSessionsStore = defineStore("sessions", () => {
       }
     }
     dispatch({ type: "APPLY_ENVELOPE", envelope });
-    if (activeDeleted && activeSessionId.value !== undefined) {
-      void loadActiveEntries();
+    if (activeDeleted) {
+      const nextId = Object.values(sessions.value)[0]?.ref.sessionId;
+      setActiveSession(nextId);
+    } else if (newDescriptor !== undefined) {
+      setActiveSession(newDescriptor.ref.sessionId, { loadEntries: false });
     }
     if (refreshTerminal) {
       void refreshStaleEntries();
@@ -248,7 +252,12 @@ export const useSessionsStore = defineStore("sessions", () => {
     retryBufferedFailure = false,
   ): Promise<ApiResult<void>> => {
     const previousActiveSessionId = activeSessionId.value;
+    const projectChanged = projectId !== currentProjectId.value;
     dispatch({ type: "PROJECT_LOAD_STARTED", projectId });
+    viewStore.clearRequestDetails();
+    if (projectChanged) {
+      viewStore.setActiveSession(undefined);
+    }
     const token = generation.value;
     pendingEnvelopes = pendingEnvelopes.filter(
       (envelope) => envelope.projectId === projectId,
@@ -288,8 +297,23 @@ export const useSessionsStore = defineStore("sessions", () => {
         type: "PROJECT_LOAD_SUCCESS",
         generation: token,
         snapshot: result.value,
-        previousActiveSessionId,
       });
+
+      const nextActiveSessionId =
+        previousActiveSessionId !== undefined &&
+        sessions.value[previousActiveSessionId] !== undefined
+          ? previousActiveSessionId
+          : result.value.sessions[0]?.ref.sessionId;
+      if (nextActiveSessionId !== activeSessionId.value) {
+        viewStore.setActiveSession(nextActiveSessionId);
+      }
+      const active =
+        nextActiveSessionId === undefined
+          ? undefined
+          : sessions.value[nextActiveSessionId];
+      if (active !== undefined) {
+        dispatch({ type: "INITIALIZE_ENTRY_CACHES", ref: active.ref });
+      }
 
       const buffered = pendingEnvelopes
         .filter((envelope) => envelope.revision > revision.value)
@@ -326,18 +350,15 @@ export const useSessionsStore = defineStore("sessions", () => {
     return hydrateProject(projectId, true);
   };
 
-  const getRequestDetailState = (requestId: string | undefined) =>
-    requestId === undefined ? undefined : requestDetails.value[requestId];
-
   const loadRequestDetails = async (requestId: string): Promise<void> => {
     const descriptor = activeDescriptor.value;
     if (descriptor === undefined) return;
-    const current = requestDetails.value[requestId];
-    if (current?.loading || current?.response !== undefined) return;
+    const current = viewStore.getRequestDetailState(requestId);
+    if (current?.status === "loading" || current?.status === "success") return;
 
     const token = generation.value;
     const sessionId = descriptor.ref.sessionId;
-    dispatch({ type: "REQUEST_DETAIL_STARTED", requestId });
+    viewStore.startRequestDetail(requestId);
 
     try {
       const result = await loadRequestResponse(sdk, requestId);
@@ -348,30 +369,18 @@ export const useSessionsStore = defineStore("sessions", () => {
       ) {
         return;
       }
-      dispatch(
-        result.success
-          ? {
-              type: "REQUEST_DETAIL_SUCCEEDED",
-              requestId,
-              response: result.value,
-            }
-          : {
-              type: "REQUEST_DETAIL_FAILED",
-              requestId,
-              error: result.error.message,
-            },
-      );
+      if (result.success) {
+        viewStore.completeRequestDetail(requestId, result.value);
+      } else {
+        viewStore.failRequestDetail(requestId, result.error.message);
+      }
     } catch (err: unknown) {
       if (
         token === generation.value &&
         activeSessionId.value === sessionId &&
         selectedRequestId.value === requestId
       ) {
-        dispatch({
-          type: "REQUEST_DETAIL_FAILED",
-          requestId,
-          error: toErrorMessage(err),
-        });
+        viewStore.failRequestDetail(requestId, toErrorMessage(err));
       }
     }
   };
@@ -561,11 +570,11 @@ export const useSessionsStore = defineStore("sessions", () => {
     id: string | undefined,
     options: { loadEntries?: boolean } = {},
   ) => {
-    dispatch({
-      type: "SET_ACTIVE_SESSION",
-      id,
-      initializeEntries: options.loadEntries === false,
-    });
+    const descriptor = id === undefined ? undefined : sessions.value[id];
+    viewStore.setActiveSession(descriptor?.ref.sessionId);
+    if (descriptor !== undefined && options.loadEntries === false) {
+      dispatch({ type: "INITIALIZE_ENTRY_CACHES", ref: descriptor.ref });
+    }
     if (options.loadEntries !== false) {
       void loadActiveEntries();
     }
@@ -581,23 +590,6 @@ export const useSessionsStore = defineStore("sessions", () => {
         descriptor.logsCount > 0;
       setActiveSession(descriptor.ref.sessionId, { loadEntries: hasEntries });
     }
-  };
-
-  const setSelectedRequest = (id: string | undefined) => {
-    dispatch({ type: "SELECT_REQUEST", id });
-  };
-
-  const setSelectedFinding = (requestId: string, findingKey: string) => {
-    dispatch({ type: "SELECT_FINDING", requestId, findingKey });
-  };
-
-  const setRequestsTab = (tab: SessionRequestsTab) => {
-    dispatch({ type: "SET_REQUESTS_TAB", tab });
-  };
-
-  const openFinding = (requestId: string, findingKey: string) => {
-    setRequestsTab("findings");
-    setSelectedFinding(requestId, findingKey);
   };
 
   const isBusy = (id: string) => actionLoading.value[id] !== undefined;
@@ -726,10 +718,6 @@ export const useSessionsStore = defineStore("sessions", () => {
 
   return {
     state: readonly(model),
-    activeSessionId,
-    selectedRequestId,
-    selectedFindingKey,
-    requestsTab,
     activeActionLoading,
     noProjectSelected,
     hydrated,
@@ -738,14 +726,9 @@ export const useSessionsStore = defineStore("sessions", () => {
     activeSession,
     activeDescriptor,
     activeEntryState,
-    getRequestDetailState,
     loadRequestDetails,
     acceptEnvelope,
     setActiveSession,
-    setSelectedRequest,
-    setSelectedFinding,
-    setRequestsTab,
-    openFinding,
     loadEntries,
     exportEntries,
     startSession,

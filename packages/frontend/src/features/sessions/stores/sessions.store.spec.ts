@@ -14,6 +14,7 @@ import {
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { useSessionsStore } from "./sessions.store";
+import { useSessionViewStore } from "./sessionView.store";
 
 import type { FrontendSDK } from "@/types";
 
@@ -377,6 +378,7 @@ describe("sessions store reliability", () => {
       getSessionEntries,
     });
     const store = useSessionsStore();
+    const viewStore = useSessionViewStore();
     await store.initialize();
     getSessionEntries.mockClear();
 
@@ -384,7 +386,7 @@ describe("sessions store reliability", () => {
       upsertEnvelope("a", 2, descriptor("a", "new-session")),
     );
 
-    expect(store.activeSessionId).toBe("new-session");
+    expect(viewStore.activeSessionId).toBe("new-session");
     expect(getSessionEntries).not.toHaveBeenCalled();
     expect(store.activeEntryState("request")?.entries).toEqual([]);
     expect(store.activeEntryState("finding")?.entries).toEqual([]);
@@ -403,6 +405,7 @@ describe("sessions store reliability", () => {
       startMining: vi.fn(async () => await start.promise),
     });
     const store = useSessionsStore();
+    const viewStore = useSessionViewStore();
     await store.initialize();
     getSessionEntries.mockClear();
 
@@ -411,7 +414,7 @@ describe("sessions store reliability", () => {
     start.resolve(ok(newSession));
     await starting;
 
-    expect(store.activeSessionId).toBe("new-session");
+    expect(viewStore.activeSessionId).toBe("new-session");
     expect(getSessionEntries).not.toHaveBeenCalled();
   });
 
@@ -624,11 +627,12 @@ describe("sessions store reliability", () => {
     });
     requestLoader.load.mockReturnValue(response.promise);
     const store = useSessionsStore();
+    const viewStore = useSessionViewStore();
     await store.initialize();
-    store.setSelectedRequest("request-1");
+    viewStore.setSelectedRequest("request-1");
 
     const loading = store.loadRequestDetails("request-1");
-    store.setSelectedRequest("request-2");
+    viewStore.setSelectedRequest("request-2");
     response.resolve(
       ok({
         request: {
@@ -649,13 +653,15 @@ describe("sessions store reliability", () => {
           requestId: "request-1",
           status: 200,
           headers: {},
+          body: "",
           time: 1,
+          length: 0,
         },
       }),
     );
     await loading;
 
-    expect(store.getRequestDetailState("request-1")).toBeUndefined();
+    expect(viewStore.getRequestDetailState("request-1")).toBeUndefined();
   });
 
   it("clears stale request-detail loading during same-project hydration", async () => {
@@ -666,12 +672,13 @@ describe("sessions store reliability", () => {
     });
     requestLoader.load.mockReturnValue(response.promise);
     const store = useSessionsStore();
+    const viewStore = useSessionViewStore();
     await store.initialize();
-    store.setSelectedRequest("request-1");
+    viewStore.setSelectedRequest("request-1");
     const loading = store.loadRequestDetails("request-1");
 
     await store.reloadForProject("a");
-    expect(store.getRequestDetailState("request-1")).toBeUndefined();
+    expect(viewStore.getRequestDetailState("request-1")).toBeUndefined();
 
     response.resolve(
       ok({
@@ -693,13 +700,15 @@ describe("sessions store reliability", () => {
           requestId: "request-1",
           status: 200,
           headers: {},
+          body: "",
           time: 1,
+          length: 0,
         },
       }),
     );
     await loading;
 
-    expect(store.getRequestDetailState("request-1")).toBeUndefined();
+    expect(viewStore.getRequestDetailState("request-1")).toBeUndefined();
   });
 
   it("clears action loading during same-project hydration", async () => {

@@ -1,20 +1,14 @@
 <script setup lang="ts">
 import ProgressBar from "primevue/progressbar";
-import { computed } from "vue";
-
-import { getSessionStats } from "@/features/sessions/lib/sessionStats";
-import { useSessionsStore } from "@/features/sessions/stores/sessions.store";
 
 defineOptions({ name: "SessionProgressBar" });
 
-const store = useSessionsStore();
-const stats = computed(() => getSessionStats(store.activeSession));
+const { progress } = defineProps<{ progress: number }>();
 </script>
 
 <template>
   <ProgressBar
-    v-if="stats !== undefined"
-    :value="stats.progress"
+    :value="progress"
     :show-value="false"
     :pt="{
       root: {

@@ -1,70 +1,52 @@
-<script setup lang="ts">
+<script setup lang="ts" generic="Row extends object">
 import { useVirtualizer } from "@tanstack/vue-virtual";
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, nextTick, ref, shallowRef, watch } from "vue";
 
-import type { VirtualSortColumn, VirtualSortRow } from "./virtualSortTable";
+import type { VirtualSortColumn } from "./virtualSortTable";
 
 import EmptyMessage from "@/shared/components/EmptyMessage.vue";
-import { useTableSort } from "@/shared/composables/useTableSort";
 
 const ROW_HEIGHT = 30;
+type Field = Extract<keyof Row, string>;
 
 const {
   rows,
   columns,
   keyField,
-  initialSortColumn = undefined,
   selectedKey = undefined,
-  selectionField = undefined,
-  serverSide = false,
   loading = false,
 } = defineProps<{
-  rows: VirtualSortRow[];
-  columns: VirtualSortColumn[];
-  keyField: string;
-  initialSortColumn?: string;
+  rows: Row[];
+  columns: VirtualSortColumn<Row>[];
+  keyField: Field;
   selectedKey?: string;
-  selectionField?: string;
   emptyIcon: string;
   emptyMessage: string;
-  serverSide?: boolean;
   loading?: boolean;
 }>();
 
 const emit = defineEmits<{
-  (event: "row-click", mouseEvent: MouseEvent, row: VirtualSortRow): void;
-  (event: "sort-change", field: string, direction: "asc" | "desc"): void;
+  (event: "row-click", mouseEvent: MouseEvent, row: Row): void;
+  (event: "sort-change", field: Field, direction: "asc" | "desc"): void;
   (event: "load-more"): void;
 }>();
 
-const { sortColumn, toggleSort, getSortIcon, sortRows, sortDirection } =
-  useTableSort<string>(initialSortColumn);
+const sortColumn = shallowRef<Field>();
+const sortDirection = ref<"asc" | "desc">("asc");
 
-const sortedRows = computed(() => {
-  if (serverSide) {
-    return rows;
-  }
-  const columnByField = new Map(
-    columns.map((column) => [column.field, column]),
-  );
-  return sortRows(rows, (row, column) => {
-    const columnDefinition = columnByField.get(column);
-    return columnDefinition?.sortValue?.(row) ?? row[column];
-  });
-});
+const changeSort = (field: Field) => {
+  const direction =
+    sortColumn.value === field && sortDirection.value === "asc"
+      ? "desc"
+      : "asc";
+  sortColumn.value = field;
+  sortDirection.value = direction;
+  emit("sort-change", field, direction);
+};
 
-const changeSort = (field: string) => {
-  if (serverSide) {
-    const direction =
-      sortColumn.value === field && sortDirection.value === "asc"
-        ? "desc"
-        : "asc";
-    sortColumn.value = field;
-    sortDirection.value = direction;
-    emit("sort-change", field, direction);
-  } else {
-    toggleSort(field);
-  }
+const getSortIcon = (field: Field) => {
+  if (sortColumn.value !== field) return "fas fa-sort";
+  return sortDirection.value === "asc" ? "fas fa-sort-up" : "fas fa-sort-down";
 };
 
 const onScroll = (event: Event) => {
@@ -88,18 +70,14 @@ const tableMinWidth = computed(() =>
   ),
 );
 
-const rowSelectionField = computed(() => selectionField ?? keyField);
+const getRowKey = (row: Row) => String(row[keyField] ?? "");
 
-const getRowKey = (row: VirtualSortRow) => String(row[keyField] ?? "");
-const getSelectionKey = (row: VirtualSortRow) =>
-  String(row[rowSelectionField.value] ?? "");
-
-const getCellText = (row: VirtualSortRow, column: VirtualSortColumn) => {
+const getCellText = (row: Row, column: VirtualSortColumn<Row>) => {
   return column.format?.(row) ?? String(row[column.field] ?? "");
 };
 
-const rowClass = (row: VirtualSortRow, index: number) => {
-  const isSelected = selectedKey === getSelectionKey(row);
+const rowClass = (row: Row, index: number) => {
+  const isSelected = selectedKey === getRowKey(row);
   return [
     "cursor-pointer text-white/80",
     {
@@ -115,19 +93,19 @@ const scrollParent = ref<HTMLElement | null>(null);
 
 const rowVirtualizer = useVirtualizer(
   computed(() => ({
-    count: sortedRows.value.length,
+    count: rows.length,
     getScrollElement: () => scrollParent.value,
     estimateSize: () => ROW_HEIGHT,
     overscan: 10,
     getItemKey: (index: number) => {
-      const row = sortedRows.value[index];
+      const row = rows[index];
       return row === undefined ? index : getRowKey(row);
     },
   })),
 );
 
 watch(
-  () => sortedRows.value.length,
+  () => rows.length,
   async (rowCount, previousRowCount) => {
     if (rowCount <= previousRowCount) {
       return;
@@ -141,7 +119,7 @@ watch(
 const totalSize = computed(() => rowVirtualizer.value.getTotalSize());
 
 const virtualRows = computed(() => {
-  const items = sortedRows.value;
+  const items = rows;
   return rowVirtualizer.value.getVirtualItems().flatMap((virtualItem) => {
     const row = items[virtualItem.index];
     if (row === undefined) {
@@ -187,7 +165,7 @@ const virtualRows = computed(() => {
     </div>
 
     <div
-      v-if="sortedRows.length > 0"
+      v-if="rows.length > 0"
       ref="scrollParent"
       class="table-body-gutter flex-1 min-h-0 overflow-y-auto bg-surface-800"
       :style="{ minWidth: `${tableMinWidth}px` }"

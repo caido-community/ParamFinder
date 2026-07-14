@@ -1,3 +1,4 @@
+import { storeToRefs } from "pinia";
 import type { MenuItem } from "primevue/menuitem";
 import type { ApiResult, SessionDescriptor } from "shared";
 import { computed, ref } from "vue";
@@ -9,10 +10,13 @@ import {
   statusToneClasses,
 } from "@/features/sessions/lib/sessionStats";
 import { useSessionsStore } from "@/features/sessions/stores/sessions.store";
+import { useSessionViewStore } from "@/features/sessions/stores/sessionView.store";
 import { useActionResult } from "@/shared/composables/useActionResult";
 
 export function useSessionTabs() {
   const store = useSessionsStore();
+  const viewStore = useSessionViewStore();
+  const { activeSessionId } = storeToRefs(viewStore);
   const { showResult } = useActionResult();
 
   const sessions = computed(() => store.list);
@@ -85,7 +89,7 @@ export function useSessionTabs() {
   };
 
   return {
-    store,
+    activeSessionId,
     sessions,
     contextMenu,
     menuItems,

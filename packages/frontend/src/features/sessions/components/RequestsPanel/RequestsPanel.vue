@@ -1,9 +1,9 @@
 <script setup lang="ts">
+import { storeToRefs } from "pinia";
 import Card from "primevue/card";
 import SelectButton from "primevue/selectbutton";
 import Splitter from "primevue/splitter";
 import SplitterPanel from "primevue/splitterpanel";
-import { computed } from "vue";
 
 import FindingsList from "./FindingsList/FindingsList.vue";
 import RequestDetails from "./RequestDetails/RequestDetails.vue";
@@ -11,16 +11,13 @@ import RequestList from "./RequestList/RequestList.vue";
 
 import {
   type SessionRequestsTab,
-  useSessionsStore,
-} from "@/features/sessions/stores/sessions.store";
+  useSessionViewStore,
+} from "@/features/sessions/stores/sessionView.store";
 
 defineOptions({ name: "RequestsPanel" });
 
-const store = useSessionsStore();
-const tab = computed({
-  get: () => store.requestsTab,
-  set: (value: SessionRequestsTab) => store.setRequestsTab(value),
-});
+const viewStore = useSessionViewStore();
+const { requestsTab: tab } = storeToRefs(viewStore);
 const tabs: { label: string; value: SessionRequestsTab }[] = [
   { label: "Requests", value: "requests" },
   { label: "Findings", value: "findings" },

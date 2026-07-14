@@ -1,8 +1,6 @@
 import type { SentRequest, Sequenced, SessionFinding } from "shared";
 
-import type { VirtualSortRow } from "@/shared/components/virtualSortTable";
-
-export type RequestRow = VirtualSortRow & {
+export type RequestRow = {
   requestId: string;
   status: number;
   length: number;
@@ -11,7 +9,7 @@ export type RequestRow = VirtualSortRow & {
   context: string;
 };
 
-export type FindingRow = VirtualSortRow & {
+export type FindingRow = {
   key: string;
   requestId: string;
   parameter: string;

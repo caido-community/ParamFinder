@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { watchDebounced } from "@vueuse/core";
+import { storeToRefs } from "pinia";
 import Card from "primevue/card";
 import Splitter from "primevue/splitter";
 import SplitterPanel from "primevue/splitterpanel";
@@ -8,6 +9,7 @@ import { computed } from "vue";
 import HTTPEditor from "./HTTPEditor/HTTPEditor.vue";
 
 import { useSessionsStore } from "@/features/sessions/stores/sessions.store";
+import { useSessionViewStore } from "@/features/sessions/stores/sessionView.store";
 import EmptyMessage from "@/shared/components/EmptyMessage.vue";
 
 defineOptions({ name: "RequestDetails" });
@@ -20,12 +22,19 @@ const fullHeightCardPt = {
 
 const LOAD_DEBOUNCE_MS = 150;
 const store = useSessionsStore();
-const selectedRequestId = computed(() => store.selectedRequestId);
+const viewStore = useSessionViewStore();
+const { selectedRequestId } = storeToRefs(viewStore);
 const detailState = computed(() =>
-  store.getRequestDetailState(selectedRequestId.value),
+  viewStore.getRequestDetailState(selectedRequestId.value),
 );
-const requestResponse = computed(() => detailState.value?.response);
-const errorMessage = computed(() => detailState.value?.error);
+const requestResponse = computed(() =>
+  detailState.value?.status === "success"
+    ? detailState.value.response
+    : undefined,
+);
+const errorMessage = computed(() =>
+  detailState.value?.status === "error" ? detailState.value.error : undefined,
+);
 
 watchDebounced(
   selectedRequestId,
@@ -36,12 +45,6 @@ watchDebounced(
   },
   { debounce: LOAD_DEBOUNCE_MS, immediate: true },
 );
-
-const requestRaw = computed(() => requestResponse.value?.request.raw ?? "");
-const responseRaw = computed(() => requestResponse.value?.response.raw ?? "");
-const host = computed(() => requestResponse.value?.request.host);
-const port = computed(() => requestResponse.value?.request.port);
-const isTls = computed(() => requestResponse.value?.request.tls);
 
 const editorPanelPt = {
   root: {
@@ -64,6 +67,12 @@ const overlayState = computed(
         message: errorMessage.value,
       };
     }
+    if (requestResponse.value === undefined) {
+      return {
+        icon: "fas fa-spinner fa-spin",
+        message: "Loading request details…",
+      };
+    }
     return undefined;
   },
 );
@@ -79,7 +88,7 @@ const overlayState = computed(
       {{ overlayState.message }}
     </EmptyMessage>
     <Splitter
-      v-show="overlayState === undefined"
+      v-if="requestResponse !== undefined"
       class="h-full min-h-0 bg-surface-900"
       :pt="{ root: { class: 'min-h-0 overflow-hidden border-0' } }"
     >
@@ -87,11 +96,15 @@ const overlayState = computed(
         <Card class="h-full" :pt="fullHeightCardPt">
           <template #content>
             <HTTPEditor
-              type="request"
-              :raw="requestRaw"
-              :host="host"
-              :port="port"
-              :is-tls="isTls"
+              :source="{
+                type: 'request',
+                raw: requestResponse.request.raw,
+                connectionInfo: {
+                  host: requestResponse.request.host,
+                  port: requestResponse.request.port,
+                  isTls: requestResponse.request.tls,
+                },
+              }"
             />
           </template>
         </Card>
@@ -99,7 +112,12 @@ const overlayState = computed(
       <SplitterPanel :size="50" :min-size="20" :pt="editorPanelPt">
         <Card class="h-full" :pt="fullHeightCardPt">
           <template #content>
-            <HTTPEditor type="response" :raw="responseRaw" />
+            <HTTPEditor
+              :source="{
+                type: 'response',
+                raw: requestResponse.response.raw ?? '',
+              }"
+            />
           </template>
         </Card>
       </SplitterPanel>

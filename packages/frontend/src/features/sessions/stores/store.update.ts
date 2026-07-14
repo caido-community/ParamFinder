@@ -1,7 +1,6 @@
 import type {
   CursorPage,
   ProjectSessionSnapshot,
-  RequestResponse,
   SessionChangeEnvelope,
   SessionDescriptor,
   SessionEntry,
@@ -19,7 +18,6 @@ import {
 import {
   cacheKey,
   type SessionAction,
-  type SessionRequestsTab,
   type SessionsModel,
 } from "./store.model";
 
@@ -32,23 +30,12 @@ export type SessionsMessage =
       type: "PROJECT_LOAD_SUCCESS";
       generation: number;
       snapshot: ProjectSessionSnapshot;
-      previousActiveSessionId?: string;
     }
   | { type: "PROJECT_LOAD_FINISHED"; generation: number }
   | { type: "APPLY_ENVELOPE"; envelope: SessionChangeEnvelope }
   | { type: "UPSERT_DESCRIPTOR"; descriptor: SessionDescriptor }
   | { type: "REMOVE_DESCRIPTORS"; refs: SessionRef[] }
-  | { type: "SET_ACTIVE_SESSION"; id?: string; initializeEntries: boolean }
-  | { type: "SELECT_REQUEST"; id?: string }
-  | { type: "SELECT_FINDING"; requestId: string; findingKey: string }
-  | { type: "SET_REQUESTS_TAB"; tab: SessionRequestsTab }
-  | { type: "REQUEST_DETAIL_STARTED"; requestId: string }
-  | {
-      type: "REQUEST_DETAIL_SUCCEEDED";
-      requestId: string;
-      response: RequestResponse;
-    }
-  | { type: "REQUEST_DETAIL_FAILED"; requestId: string; error: string }
+  | { type: "INITIALIZE_ENTRY_CACHES"; ref: SessionRef }
   | { type: "ENTRY_LOAD_STARTED"; key: string; cache: SessionEntryCache }
   | {
       type: "ENTRY_LOAD_SUCCEEDED";
@@ -87,15 +74,11 @@ function startProjectLoad(
     hydrated: false,
     noProjectSelected: projectId === undefined,
     actionLoading: {},
-    requestDetails: {},
     ...(projectChanged
       ? {
           sessions: {},
           caches: {},
           revision: 0,
-          activeSessionId: undefined,
-          selectedRequestId: undefined,
-          selectedFindingKey: undefined,
         }
       : {}),
   };
@@ -105,7 +88,6 @@ function completeProjectLoad(
   model: SessionsModel,
   generation: number,
   snapshot: ProjectSessionSnapshot,
-  previousActiveSessionId?: string,
 ): SessionsModel {
   if (
     generation !== model.generation ||
@@ -116,71 +98,35 @@ function completeProjectLoad(
   const sessions = Object.fromEntries(
     snapshot.sessions.map((session) => [session.ref.sessionId, session]),
   );
-  const activeSessionId =
-    previousActiveSessionId !== undefined &&
-    sessions[previousActiveSessionId] !== undefined
-      ? previousActiveSessionId
-      : snapshot.sessions[0]?.ref.sessionId;
-  const activeChanged = activeSessionId !== model.activeSessionId;
-  const descriptor =
-    activeSessionId === undefined ? undefined : sessions[activeSessionId];
-  const prefix =
-    descriptor === undefined
-      ? undefined
-      : `${descriptor.ref.projectId}\u0000${descriptor.ref.sessionId}\u0000`;
-  const caches =
-    prefix === undefined
-      ? {}
-      : Object.fromEntries(
-          Object.entries(model.caches).filter(([key]) =>
-            key.startsWith(prefix),
-          ),
-        );
+  const sessionIds = new Set(Object.keys(sessions));
+  const caches = Object.fromEntries(
+    Object.entries(model.caches).filter(([key]) => {
+      const [projectId, sessionId] = key.split("\u0000");
+      return (
+        projectId === snapshot.projectId && sessionIds.has(sessionId ?? "")
+      );
+    }),
+  );
   return {
     ...model,
     sessions,
     caches,
     revision: snapshot.revision,
-    activeSessionId,
     hydrated: true,
-    ...(activeChanged
-      ? {
-          selectedRequestId: undefined,
-          selectedFindingKey: undefined,
-          requestDetails: {},
-        }
-      : {}),
   };
 }
 
-function setActiveSession(
+function initializeEntryCaches(
   model: SessionsModel,
-  id: string | undefined,
-  initializeEntries: boolean,
+  ref: SessionRef,
 ): SessionsModel {
-  const descriptor = id === undefined ? undefined : model.sessions[id];
-  if (descriptor === undefined) {
-    return {
-      ...model,
-      activeSessionId: id,
-      selectedRequestId: undefined,
-      selectedFindingKey: undefined,
-      requestDetails: {},
-    };
-  }
   const caches = { ...model.caches };
-  if (initializeEntries) {
-    for (const kind of ENTRY_KINDS) {
-      const key = cacheKey(descriptor.ref, kind);
-      caches[key] ??= createEntryCache(LIVE_ENTRY_SORT);
-    }
+  for (const kind of ENTRY_KINDS) {
+    const key = cacheKey(ref, kind);
+    caches[key] ??= createEntryCache(LIVE_ENTRY_SORT);
   }
   return {
     ...model,
-    activeSessionId: id,
-    selectedRequestId: undefined,
-    selectedFindingKey: undefined,
-    requestDetails: {},
     caches,
   };
 }
@@ -213,39 +159,7 @@ function removeDescriptors(model: SessionsModel, refs: SessionRef[]) {
       }
     }
   }
-  if (
-    model.activeSessionId === undefined ||
-    sessions[model.activeSessionId] !== undefined
-  ) {
-    return { ...model, sessions, caches };
-  }
-  const cleared = {
-    ...model,
-    sessions,
-    caches,
-    activeSessionId: undefined,
-    selectedRequestId: undefined,
-    selectedFindingKey: undefined,
-    requestDetails: {},
-  };
-  const next = Object.values(sessions)[0];
-  return next === undefined ? cleared : selectNewSession(cleared, next);
-}
-
-function selectNewSession(model: SessionsModel, descriptor: SessionDescriptor) {
-  const caches = { ...model.caches };
-  for (const kind of ENTRY_KINDS) {
-    const key = cacheKey(descriptor.ref, kind);
-    caches[key] ??= createEntryCache(LIVE_ENTRY_SORT);
-  }
-  return {
-    ...model,
-    activeSessionId: descriptor.ref.sessionId,
-    selectedRequestId: undefined,
-    selectedFindingKey: undefined,
-    requestDetails: {},
-    caches,
-  };
+  return { ...model, sessions, caches };
 }
 
 function applyEnvelope(model: SessionsModel, envelope: SessionChangeEnvelope) {
@@ -261,7 +175,6 @@ function applyEnvelope(model: SessionsModel, envelope: SessionChangeEnvelope) {
   for (const change of envelope.changes) {
     switch (change.type) {
       case "upsert": {
-        const isNew = next.sessions[change.session.ref.sessionId] === undefined;
         next = {
           ...next,
           sessions: {
@@ -269,7 +182,6 @@ function applyEnvelope(model: SessionsModel, envelope: SessionChangeEnvelope) {
             [change.session.ref.sessionId]: change.session,
           },
         };
-        if (isNew) next = selectNewSession(next, change.session);
         break;
       }
       case "terminal":
@@ -322,12 +234,7 @@ export function update(
     case "PROJECT_LOAD_STARTED":
       return startProjectLoad(model, message.projectId);
     case "PROJECT_LOAD_SUCCESS":
-      return completeProjectLoad(
-        model,
-        message.generation,
-        message.snapshot,
-        message.previousActiveSessionId,
-      );
+      return completeProjectLoad(model, message.generation, message.snapshot);
     case "PROJECT_LOAD_FINISHED":
       return message.generation === model.generation
         ? { ...model, hydrated: true }
@@ -346,48 +253,8 @@ export function update(
       };
     case "REMOVE_DESCRIPTORS":
       return removeDescriptors(model, message.refs);
-    case "SET_ACTIVE_SESSION":
-      return setActiveSession(model, message.id, message.initializeEntries);
-    case "SELECT_REQUEST":
-      return {
-        ...model,
-        selectedRequestId: message.id,
-        selectedFindingKey: undefined,
-        requestDetails: {},
-      };
-    case "SELECT_FINDING":
-      return {
-        ...model,
-        selectedRequestId: message.requestId,
-        selectedFindingKey: message.findingKey,
-        requestDetails: {},
-      };
-    case "SET_REQUESTS_TAB":
-      return { ...model, requestsTab: message.tab };
-    case "REQUEST_DETAIL_STARTED":
-      return {
-        ...model,
-        requestDetails: {
-          ...model.requestDetails,
-          [message.requestId]: { loading: true },
-        },
-      };
-    case "REQUEST_DETAIL_SUCCEEDED":
-      return {
-        ...model,
-        requestDetails: {
-          ...model.requestDetails,
-          [message.requestId]: { loading: false, response: message.response },
-        },
-      };
-    case "REQUEST_DETAIL_FAILED":
-      return {
-        ...model,
-        requestDetails: {
-          ...model.requestDetails,
-          [message.requestId]: { loading: false, error: message.error },
-        },
-      };
+    case "INITIALIZE_ENTRY_CACHES":
+      return initializeEntryCaches(model, message.ref);
     case "ENTRY_LOAD_STARTED":
       return {
         ...model,
