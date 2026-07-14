@@ -1,36 +1,45 @@
-import { error, ok, Request, Result } from "shared";
-import { BackendSDK } from "../types/types";
-import { generateID } from "../util/helper";
+import {
+  createEngineRequestFromRaw,
+  createHeaderMap,
+} from "@paramfinder/engine";
+import type { Request as CaidoRequest } from "caido:utils";
+import {
+  type ApiResult,
+  error,
+  ok,
+  type Request,
+  requestIdSchema,
+} from "shared";
+
+import { type BackendSDK } from "../types/types";
 
 export async function getRequest(
   sdk: BackendSDK,
   id: string,
-): Promise<Result<Request>> {
-  try {
-    const requestResponse = await sdk.requests.get(id);
-    if (!requestResponse) {
-      return error("Request not found");
-    }
+): Promise<ApiResult<Request>> {
+  const input = requestIdSchema.safeParse(id);
+  if (!input.success) return error("Invalid request ID.", "VALIDATION");
 
-    const spec = requestResponse.request.toSpec();
-
-    const url = `${spec.getTls() ? "https" : "http"}://${spec.getHost()}:${spec.getPort()}${spec.getPath()}${spec.getQuery()}`;
-
-    return ok({
-      id: generateID(),
-      host: spec.getHost(),
-      port: spec.getPort(),
-      url,
-      path: spec.getPath(),
-      query: spec.getQuery(),
-      method: spec.getMethod(),
-      headers: spec.getHeaders(),
-      body: spec.getBody()?.toText() ?? "",
-      tls: spec.getTls(),
-      context: "discovery",
-      raw: requestResponse.request.getRaw().toText(),
-    } as Request);
-  } catch (err) {
-    return error(err instanceof Error ? err.message : String(err));
+  const requestResponse = await sdk.requests.get(input.data);
+  if (!requestResponse) {
+    return error("Request not found", "NOT_FOUND");
   }
+
+  return ok(toRequest(requestResponse.request));
+}
+
+function toRequest(request: CaidoRequest): Request {
+  const spec = request.toSpec();
+  return createEngineRequestFromRaw({
+    raw: request.getRaw().toText(),
+    host: spec.getHost(),
+    port: spec.getPort(),
+    tls: spec.getTls(),
+    path: spec.getPath(),
+    query: spec.getQuery(),
+    method: spec.getMethod(),
+    headers: createHeaderMap(spec.getHeaders()),
+    body: spec.getBody()?.toText() ?? "",
+    context: "discovery",
+  });
 }

@@ -1,103 +1,96 @@
-import { SDK, DefineAPI } from "caido:plugin";
-import { initSettingsStore } from "./settings/settings";
+import { type ApiResult, error } from "shared";
+
 import {
-  cancelMining,
-  deleteSession,
-  pauseMining,
-  resumeMining,
+  cancelSession,
+  pauseSession,
+  resumeSession,
   startMining,
 } from "./api/mining";
-import { initWordlistManager } from "./wordlists/wordlists";
-import { getSettings, getSettingsPath, updateSettings } from "./api/settings";
+import { getRequest } from "./api/requests";
 import {
-  addWordlistPath,
+  deleteSessions,
+  getCurrentProjectId,
+  getSessionEntries,
+  listSessions,
+} from "./api/sessions";
+import { getSettings, getSettingsPath, patchSettings } from "./api/settings";
+import {
   clearWordlists,
+  deleteWordlist,
   getWordlists,
   importWordlist,
-  removeWordlistPath,
-  toggleWordlist,
-  updateAttackTypes,
+  setWordlistAttackTypes,
+  setWordlistEnabled,
 } from "./api/wordlists";
-import {
-  cancelWordlistUpload,
-  finalizeWordlistUpload,
-  startWordlistUpload,
-  uploadWordlistChunk,
-} from "./api/uploader";
-import { getRequest } from "./api/requests";
-import { BackendEvents } from "./types/types";
+import { pauseSessionsOutsideProject } from "./engine/session-manager";
+import { initSessionStore } from "./sessions/session-store";
+import { initSettingsStore } from "./settings/settings";
+import type { BackendSDK } from "./types/types";
+import { getErrorMessage } from "./util/errors";
+import { initWordlistManager } from "./wordlists/wordlists";
 
-export type { BackendEvents } from "./types/types";
+export type { API, Events, Spec } from "shared";
 
-export type API = DefineAPI<{
-  // Mining
-  startMining: typeof startMining;
-  cancelMining: typeof cancelMining;
-  pauseMining: typeof pauseMining;
-  resumeMining: typeof resumeMining;
-  deleteSession: typeof deleteSession;
-
-  // Requests
-  getRequest: typeof getRequest;
-
-  // Wordlists
-  addWordlistPath: typeof addWordlistPath;
-  removeWordlistPath: typeof removeWordlistPath;
-  getWordlists: typeof getWordlists;
-  clearWordlists: typeof clearWordlists;
-  importWordlist: typeof importWordlist;
-  toggleWordlist: typeof toggleWordlist;
-  updateAttackTypes: typeof updateAttackTypes;
-
-  // Uploader
-  startWordlistUpload: typeof startWordlistUpload;
-  uploadWordlistChunk: typeof uploadWordlistChunk;
-  finalizeWordlistUpload: typeof finalizeWordlistUpload;
-  cancelWordlistUpload: typeof cancelWordlistUpload;
-
-  // Settings
-  getSettings: typeof getSettings;
-  updateSettings: typeof updateSettings;
-  getSettingsPath: typeof getSettingsPath;
-}>;
-
-export function init(sdk: SDK<API, BackendEvents>) {
-  initWordlistManager(sdk);
+export function init(sdk: BackendSDK) {
+  const database = sdk.meta.db();
+  const sessions = initSessionStore(sdk, database);
+  initWordlistManager(
+    sdk,
+    sessions.ready.then(() => database),
+  );
   initSettingsStore(sdk);
 
-  // Mining
-  sdk.api.register("startMining", startMining);
-  sdk.api.register("getRequest", getRequest);
-  sdk.api.register("cancelMining", cancelMining);
-  sdk.api.register("pauseMining", pauseMining);
-  sdk.api.register("resumeMining", resumeMining);
-  sdk.api.register("deleteSession", deleteSession);
+  sdk.events.onProjectChange(async (eventSdk, project) => {
+    const result = await pauseSessionsOutsideProject(
+      eventSdk,
+      project?.getId(),
+    );
+    if (!result.success) {
+      eventSdk.console.error(
+        `[SESSIONS] Could not pause sessions after project change: ${result.error.message}`,
+      );
+    }
+  });
 
-  // Wordlists
-  sdk.api.register("addWordlistPath", addWordlistPath);
-  sdk.api.register("removeWordlistPath", removeWordlistPath);
-  sdk.api.register("getWordlists", getWordlists);
-  sdk.api.register("clearWordlists", clearWordlists);
-  sdk.api.register("importWordlist", importWordlist);
-  sdk.api.register("toggleWordlist", toggleWordlist);
-  sdk.api.register("updateAttackTypes", updateAttackTypes);
+  const guard =
+    <Arguments extends unknown[], Value>(
+      handler: (
+        handlerSdk: BackendSDK,
+        ...args: Arguments
+      ) => Promise<ApiResult<Value>>,
+    ) =>
+    async (
+      handlerSdk: BackendSDK,
+      ...args: Arguments
+    ): Promise<ApiResult<Value>> => {
+      try {
+        return await handler(handlerSdk, ...args);
+      } catch (cause) {
+        const message = getErrorMessage(cause);
+        sdk.console.error(`[API] ${message}`);
 
-  // Uploader
-  sdk.api.register("startWordlistUpload", startWordlistUpload);
-  sdk.api.register("uploadWordlistChunk", uploadWordlistChunk);
-  sdk.api.register("finalizeWordlistUpload", finalizeWordlistUpload);
-  sdk.api.register("cancelWordlistUpload", cancelWordlistUpload);
-
-  // Settings
-  sdk.api.register("getSettings", getSettings);
-  sdk.api.register("updateSettings", updateSettings);
-  sdk.api.register("getSettingsPath", getSettingsPath);
-
-  setTimeout(() => {
-    sdk.meta.updateAvailable().then((isAvailable) => {
-      if (isAvailable) {
-        sdk.api.send("paramfinder:update_available");
+        return error(`ParamFinder backend operation failed: ${message}`, "IO");
       }
-    }).catch(() => {});
-  }, 2000);
+    };
+
+  sdk.api.register("startMining", guard(startMining));
+  sdk.api.register("cancelSession", guard(cancelSession));
+  sdk.api.register("pauseSession", guard(pauseSession));
+  sdk.api.register("resumeSession", guard(resumeSession));
+  sdk.api.register("deleteSessions", guard(deleteSessions));
+  sdk.api.register("listSessions", guard(listSessions));
+  sdk.api.register("getSessionEntries", guard(getSessionEntries));
+  sdk.api.register("getCurrentProjectId", guard(getCurrentProjectId));
+  sdk.api.register("getRequest", guard(getRequest));
+  sdk.api.register("getWordlists", guard(getWordlists));
+  sdk.api.register("clearWordlists", guard(clearWordlists));
+  sdk.api.register("importWordlist", guard(importWordlist));
+  sdk.api.register("deleteWordlist", guard(deleteWordlist));
+  sdk.api.register("setWordlistEnabled", guard(setWordlistEnabled));
+  sdk.api.register("setWordlistAttackTypes", guard(setWordlistAttackTypes));
+  sdk.api.register("getSettings", guard(getSettings));
+  sdk.api.register("patchSettings", guard(patchSettings));
+  sdk.api.register("getSettingsPath", guard(getSettingsPath));
+
+  sdk.console.log("Backend plugin initialized");
 }

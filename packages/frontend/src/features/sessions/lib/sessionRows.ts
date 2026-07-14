@@ -1,0 +1,57 @@
+import type { SentRequest, Sequenced, SessionFinding } from "shared";
+
+export type RequestRow = {
+  requestId: string;
+  status: number;
+  length: number;
+  time: number;
+  parametersTested: number;
+  context: string;
+};
+
+export type FindingRow = {
+  key: string;
+  requestId: string;
+  parameter: string;
+  anomaly: string;
+  status: number;
+  length: number;
+};
+
+export function getFindingKey(finding: Sequenced<SessionFinding>): string {
+  return String(finding.sequence);
+}
+
+export function createRequestRows(
+  session: { sentRequests: Sequenced<SentRequest>[] } | undefined,
+): RequestRow[] {
+  if (session === undefined) {
+    return [];
+  }
+
+  return session.sentRequests.map((request) => ({
+    requestId: request.requestId,
+    status: request.responseStatus,
+    length: request.responseLength,
+    time: request.responseTime,
+    parametersTested: request.parametersTested ?? request.parametersSent,
+    context: request.context,
+  }));
+}
+
+export function createFindingRows(
+  session: { findings: Sequenced<SessionFinding>[] } | undefined,
+): FindingRow[] {
+  if (session === undefined) {
+    return [];
+  }
+
+  return session.findings.map((finding) => ({
+    key: getFindingKey(finding),
+    requestId: finding.requestId,
+    parameter: finding.parameter.name,
+    anomaly: finding.anomaly.type,
+    status: finding.responseStatus,
+    length: finding.responseLength,
+  }));
+}

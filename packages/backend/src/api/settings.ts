@@ -1,50 +1,43 @@
-import { error, ok, Result, Settings } from "shared";
-import { BackendSDK } from "../types/types";
+import {
+  type ApiResult,
+  error,
+  ok,
+  type Settings,
+  type SettingsChanges,
+  settingsChangesSchema,
+} from "shared";
+
 import { getSettingsStore } from "../settings/settings";
+import type { BackendSDK } from "../types/types";
 
-export async function getSettings(sdk: BackendSDK): Promise<Result<Settings>> {
+export async function getSettings(_: BackendSDK): Promise<ApiResult<Settings>> {
   const settingsStore = getSettingsStore();
-
-  try {
-    if (!settingsStore) {
-      return error("Settings store not initialized");
-    }
-    const settings = settingsStore.getSettings();
-    return ok(settings);
-  } catch (err) {
-    return error(err instanceof Error ? err.message : String(err));
-  }
+  return ok(await settingsStore.getSettings());
 }
 
-export async function updateSettings(
-  sdk: BackendSDK,
-  settings: Settings,
-): Promise<Result<Settings>> {
-  const settingsStore = getSettingsStore();
+export async function patchSettings(
+  _: BackendSDK,
+  changes: SettingsChanges,
+): Promise<ApiResult<Settings>> {
+  const parsed = settingsChangesSchema.safeParse(changes);
+  if (!parsed.success) {
+    return error("Invalid settings patch.", "VALIDATION", {
+      issues: parsed.error.issues.map((issue) => issue.message),
+    });
+  }
 
   try {
-    if (!settingsStore) {
-      return error("Settings store not initialized");
-    }
-    const newSettings = settingsStore.updateSettings(settings);
-    return ok(newSettings);
-  } catch (err) {
-    return error(err instanceof Error ? err.message : String(err));
+    const settingsStore = getSettingsStore();
+    return ok(await settingsStore.patchSettings(parsed.data));
+  } catch (cause) {
+    if (cause instanceof TypeError) return error(cause.message, "VALIDATION");
+    throw cause;
   }
 }
 
 export async function getSettingsPath(
-  sdk: BackendSDK,
-): Promise<Result<string>> {
+  _: BackendSDK,
+): Promise<ApiResult<string>> {
   const settingsStore = getSettingsStore();
-
-  try {
-    if (!settingsStore) {
-      return error("Settings store not initialized");
-    }
-    const path = settingsStore.getSettingsPath();
-    return ok(path);
-  } catch (err) {
-    return error(err instanceof Error ? err.message : String(err));
-  }
+  return ok(settingsStore.getSettingsPath());
 }

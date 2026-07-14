@@ -1,14 +1,31 @@
 {
   "name": "shared",
-  "version": "1.1.4",
-  "description": "Shared types",
-  "author": "bebiks",
-  "license": "CC0-1.0",
+  "version": "0.1.0",
+  "description": "Shared ParamFinder plugin contracts",
   "type": "module",
-  "types": "src/index.ts",
-  "main": "src/index.ts",
-  "scripts": {
-    "typecheck": "tsc --noEmit"
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "development": {
+        "types": "./src/index.ts",
+        "default": "./src/index.ts"
+      },
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
   },
-  "dependencies": {}
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsup && tsgo -p tsconfig.build.json",
+    "typecheck": "tsgo --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@caido/sdk-shared": "^0.2.2",
+    "@paramfinder/engine": "workspace:*",
+    "zod": "^4.4.3"
+  }
 }

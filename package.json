@@ -1,19 +1,36 @@
 {
   "name": "paramfinder-plugin",
-  "version": "0.1.0",
-  "description": "ParamFinder plugin for Caido",
-  "author": "Caido Labs Inc. <dev@caido.io>",
-  "license": "CC0-1.0",
-  "type": "module",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@10.20.0",
   "scripts": {
-    "build": "node scripts/clean.js && pnpm -r build && node scripts/pack.js",
-    "typecheck": "pnpm -r typecheck"
+    "typecheck": "pnpm -r typecheck",
+    "lint": "eslint ./packages/**/src",
+    "lint:fix": "eslint ./packages/**/src --fix",
+    "knip": "knip",
+    "test": "pnpm --filter @paramfinder/engine build && pnpm --filter @paramfinder/cli build && vitest run",
+    "test:plugin": "pnpm --filter @paramfinder/engine build && pnpm --filter shared build && vitest run packages/backend packages/frontend packages/engine",
+    "build": "pnpm build:all",
+    "build:plugin": "pnpm --filter @paramfinder/engine build && pnpm --filter shared build && caido-dev build",
+    "build:all": "pnpm --filter @paramfinder/engine build && pnpm --filter shared build && pnpm --filter @paramfinder/cli build && caido-dev build",
+    "watch": "caido-dev watch",
+    "validate": "pnpm typecheck && pnpm lint && pnpm knip && pnpm test && pnpm build"
   },
   "devDependencies": {
-    "@caido/plugin-manifest": "0.2.0",
-    "esbuild": "0.24.0",
-    "jszip": "3.10.1",
-    "typescript": "5.7.2",
-    "vite": "6.0.2"
+    "@caido-community/dev": "^0.1.3",
+    "@caido/eslint-config": "^0.10.0",
+    "@caido/tailwindcss": "0.1.0",
+    "@types/node": "^22.13.5",
+    "@typescript/native-preview": "7.0.0-dev.20260524.1",
+    "@vitejs/plugin-vue": "5.2.1",
+    "eslint": "9.29.0",
+    "fast-check": "^4.8.0",
+    "knip": "6.14.2",
+    "postcss-prefixwrap": "1.51.0",
+    "tailwindcss": "3.4.13",
+    "tailwindcss-primeui": "0.6.1",
+    "tsup": "^8.5.1",
+    "typescript": "5.5.4",
+    "vitest": "^3.2.4"
   }
 }

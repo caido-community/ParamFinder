@@ -1,93 +1,138 @@
-import { SDK } from "caido:plugin";
-import { readFile, writeFile } from "fs/promises";
-import * as path from "path";
-import { Settings } from "shared";
+import { readFile, rename, writeFile } from "fs/promises";
+import path from "path";
 
-class SettingsStore {
-  private static instance: SettingsStore;
+import { isRecordObject } from "@paramfinder/engine";
+import type { SDK } from "caido:plugin";
+import { type Settings, settingsSchema } from "shared";
 
-  private settings: Settings;
-  private sdk: SDK;
+import { createDefaultSettings } from "../engine/engine-mapping";
+import { writeFileAtomically } from "../util/atomic-file";
+import { SerialTaskQueue } from "../util/serial-task-queue";
 
-  constructor(sdk: SDK) {
-    this.settings = {
-      delay: 20,
-      concurrency: 5,
-      timeout: 15 * 60,
-      autoDetectMaxSize: true,
-      performanceMode: false,
-      learnRequestsCount: 6,
-      wafDetection: true,
-      additionalChecks: true,
-      debug: false,
-      autopilotEnabled: true,
-      updateContentLength: true,
-      ignoreAnomalyTypes: [],
-      addCacheBusterParameter: true,
-    };
-    this.sdk = sdk;
+type SettingsPersistence = {
+  readFile: (path: string) => Promise<string>;
+  writeFile: (path: string, data: string) => Promise<void>;
+  replaceFile?: (from: string, to: string) => Promise<void>;
+};
 
-    this.loadSettingsFromFile();
-    SettingsStore.instance = this;
+const fileSettingsPersistence: SettingsPersistence = {
+  readFile: async (settingsPath) => String(await readFile(settingsPath)),
+  writeFile,
+  replaceFile: rename,
+};
+
+export class SettingsStore {
+  private settings: Settings = createDefaultSettings();
+  private readonly writeQueue = new SerialTaskQueue();
+  readonly ready: Promise<void>;
+
+  constructor(
+    private readonly sdk: SDK,
+    private readonly persistence: SettingsPersistence = fileSettingsPersistence,
+  ) {
+    this.ready = this.loadSettingsFromFile();
   }
 
-  static get(): SettingsStore {
-    if (!SettingsStore.instance) {
-      throw new Error("SettingsStore not initialized");
-    }
-
-    return SettingsStore.instance;
+  async getSettings(): Promise<Settings> {
+    await this.ready;
+    await this.writeQueue.onIdle();
+    return copySettings(this.settings);
   }
 
-  getSettings(): Settings {
-    return this.settings;
-  }
+  async patchSettings(changes: Partial<Settings>): Promise<Settings> {
+    await this.ready;
+    return this.writeQueue.run(async () => {
+      const validated = settingsSchema.safeParse({
+        ...this.settings,
+        ...changes,
+      });
+      if (!validated.success) {
+        throw new TypeError(
+          validated.error.issues.map((issue) => issue.message).join("; "),
+        );
+      }
 
-  updateSettings(newSettings: Settings): Settings {
-    this.settings = newSettings;
-    this.saveSettingsToFile();
-    return this.settings;
-  }
+      await this.persist(validated.data);
+      this.settings = validated.data;
 
-  updateSetting(key: string, value: any): Settings {
-    Object.assign(this.settings, { [key]: value });
-    this.saveSettingsToFile();
-    return this.settings;
+      return copySettings(validated.data);
+    });
   }
 
   getSettingsPath(): string {
     return path.join(this.sdk.meta.path(), "settings.json");
   }
 
-  private async saveSettingsToFile() {
-    const settingsPath = this.getSettingsPath();
-    await writeFile(settingsPath, JSON.stringify(this.settings, null, 2));
+  private async persist(settings: Settings): Promise<void> {
+    const data = JSON.stringify(settings, null, 2);
+    await writeFileAtomically(this.getSettingsPath(), data, this.persistence);
   }
 
-  private async loadSettingsFromFile() {
-    const settingsPath = this.getSettingsPath();
+  private async loadSettingsFromFile(): Promise<void> {
     try {
-      const settings = JSON.parse(await readFile(settingsPath, "utf-8"));
-      Object.assign(this.settings, settings);
-    } catch (error) {
-      await this.saveSettingsToFile();
+      const raw = JSON.parse(
+        await this.persistence.readFile(this.getSettingsPath()),
+      ) as unknown;
+      const migrated = migrateSettings(raw);
+      this.settings = migrated.settings;
+
+      if (migrated.changed) await this.persist(migrated.settings);
+    } catch {
+      await this.persistence
+        .replaceFile?.(
+          this.getSettingsPath(),
+          `${this.getSettingsPath()}.quarantine-${Date.now()}`,
+        )
+        .catch(() => undefined);
+      await this.persist(this.settings);
     }
   }
 }
 
-let settingsStore: SettingsStore | null = null;
-export function initSettingsStore(sdk: SDK) {
-  if (settingsStore) {
-    throw new Error("Settings store already initialized");
-  }
-
-  settingsStore = new SettingsStore(sdk);
+function copySettings(settings: Settings): Settings {
+  return { ...settings, ignoreAnomalyTypes: [...settings.ignoreAnomalyTypes] };
 }
 
-export function getSettingsStore(): SettingsStore {
-  if (!settingsStore) {
-    throw new Error("Settings store not initialized");
+function migrateSettings(raw: unknown): {
+  settings: Settings;
+  changed: boolean;
+} {
+  const current = settingsSchema.safeParse(raw);
+  if (current.success) return { settings: current.data, changed: false };
+
+  const legacy = isRecordObject(raw) ? raw : {};
+  // Legacy `timeout` (seconds) was renamed to `requestTimeoutSeconds`.
+  const legacyTimeout =
+    typeof legacy.timeout === "number" && legacy.timeout > 0
+      ? legacy.timeout
+      : undefined;
+  const candidate: Record<string, unknown> = {
+    ...legacy,
+    requestTimeoutSeconds: legacy.requestTimeoutSeconds ?? legacyTimeout,
+  };
+
+  const defaults = createDefaultSettings();
+  const repaired: Record<string, unknown> = { ...defaults };
+  for (const key of Object.keys(defaults) as (keyof Settings)[]) {
+    if (candidate[key] === undefined) continue;
+
+    const field = settingsSchema.shape[key].safeParse(candidate[key]);
+    if (field.success) repaired[key] = field.data;
   }
 
+  return {
+    settings: settingsSchema.parse(repaired),
+    changed: true,
+  };
+}
+
+let settingsStore: SettingsStore | undefined;
+export function initSettingsStore(sdk: SDK): SettingsStore {
+  settingsStore ??= new SettingsStore(sdk);
+  return settingsStore;
+}
+export function getSettingsStore(): SettingsStore {
+  if (settingsStore === undefined)
+    throw new Error("Settings store not initialized");
   return settingsStore;
 }

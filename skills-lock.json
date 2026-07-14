@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "skills": {
+    "vue-pinia-best-practices": {
+      "source": "hyf0/vue-skills",
+      "sourceType": "github",
+      "skillPath": "skills/vue-pinia-best-practices/SKILL.md",
+      "computedHash": "d4ba913bec21910b8e37b2115cd964df2dc43ad62346b981c7b88d4ddc8cf792"
+    }
+  }
+}
