@@ -10,10 +10,6 @@ concurrency:
   group: validate-${{ github.ref_name }}
   cancel-in-progress: true
 
-env:
-  CAIDO_NODE_VERSION: 20
-  CAIDO_PNPM_VERSION: 9
-
 jobs:
   typecheck:
     name: 'Typecheck'
@@ -22,17 +18,10 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.CAIDO_NODE_VERSION }}
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v3.0.0
-        with:
-          version: ${{ env.CAIDO_PNPM_VERSION }}
+      - name: Setup mise
+        uses: jdx/mise-action@v2
 
       - name: Install dependencies
         run: pnpm install
@@ -48,15 +37,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.CAIDO_NODE_VERSION }}
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4.1.0
-        with:
-          version: ${{ env.CAIDO_PNPM_VERSION }}
+      - name: Setup mise
+        uses: jdx/mise-action@v2
 
       - name: Install dependencies
         run: pnpm install
@@ -72,15 +54,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.CAIDO_NODE_VERSION }}
-
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4.1.0
-        with:
-          version: ${{ env.CAIDO_PNPM_VERSION }}
+      - name: Setup mise
+        uses: jdx/mise-action@v2
 
       - name: Install dependencies
         run: pnpm install
@@ -95,14 +70,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.CAIDO_NODE_VERSION }}
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4.1.0
-        with:
-          version: ${{ env.CAIDO_PNPM_VERSION }}
+      - name: Setup mise
+        uses: jdx/mise-action@v2
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Run tests
@@ -115,14 +84,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.CAIDO_NODE_VERSION }}
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4.1.0
-        with:
-          version: ${{ env.CAIDO_PNPM_VERSION }}
+      - name: Setup mise
+        uses: jdx/mise-action@v2
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
       - name: Build plugin
