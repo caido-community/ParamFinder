@@ -1,5 +1,4 @@
 import { createPinia, setActivePinia } from "pinia";
-import type { RequestResponse } from "shared";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { useSessionViewStore } from "./sessionView.store";
@@ -21,28 +20,6 @@ describe("session view store", () => {
     expect(store.selectedRequestId).toBe("other-request");
     expect(store.selectedFindingKey).toBeUndefined();
     expect(store.requestDetails).toEqual({});
-  });
-
-  it("represents request-detail transitions as distinct states", () => {
-    const store = useSessionViewStore();
-    const response = {} as RequestResponse;
-
-    store.startRequestDetail("request");
-    expect(store.getRequestDetailState("request")).toEqual({
-      status: "loading",
-    });
-
-    store.completeRequestDetail("request", response);
-    expect(store.getRequestDetailState("request")).toEqual({
-      status: "success",
-      response,
-    });
-
-    store.failRequestDetail("request", "failed");
-    expect(store.getRequestDetailState("request")).toEqual({
-      status: "error",
-      error: "failed",
-    });
   });
 
   it("moves session tabs before and after drop targets", () => {

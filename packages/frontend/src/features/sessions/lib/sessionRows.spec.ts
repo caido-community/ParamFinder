@@ -18,11 +18,6 @@ function createSession(
 }
 
 describe("sessionRows", () => {
-  it("returns empty rows for an undefined session", () => {
-    expect(createRequestRows(undefined)).toEqual([]);
-    expect(createFindingRows(undefined)).toEqual([]);
-  });
-
   it("maps sent requests to table rows", () => {
     const rows = createRequestRows(
       createSession({

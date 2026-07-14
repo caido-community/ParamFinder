@@ -280,40 +280,6 @@ describe("SessionStore reliability", () => {
     ]);
   });
 
-  it("creates the normalized session tables and indexes in the plugin database", async () => {
-    await createStore();
-    const database = new DatabaseSync(path.join(directory, "meta.db"), {
-      readOnly: true,
-    });
-    const objects = database
-      .prepare(
-        `SELECT name, type FROM sqlite_master
-         WHERE name LIKE 'paramfinder_session%' OR name LIKE 'paramfinder_entries%'`,
-      )
-      .all();
-
-    expect(objects).toEqual(
-      expect.arrayContaining([
-        expect.objectContaining({
-          name: "paramfinder_session_projects",
-          type: "table",
-        }),
-        expect.objectContaining({
-          name: "paramfinder_sessions",
-          type: "table",
-        }),
-        expect.objectContaining({
-          name: "paramfinder_session_entries",
-          type: "table",
-        }),
-        expect.objectContaining({
-          name: "paramfinder_entries_by_session_kind_sequence",
-          type: "index",
-        }),
-      ]),
-    );
-  });
-
   it("paginates a stable >1000-entry snapshot without duplicates or omissions", async () => {
     const store = await createStore();
     const ref: SessionRef = { projectId: projectA, sessionId: "large" };

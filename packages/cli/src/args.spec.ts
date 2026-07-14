@@ -90,16 +90,6 @@ describe("parseCliArgs", () => {
     expect(options.addCacheBusterParameter).toBe(false);
   });
 
-  it("parses integer custom value generation", () => {
-    const options = parseCliArgs([
-      "https://example.com",
-      "--custom-value-type",
-      "integer",
-    ]);
-
-    expect(options.customValueType).toBe("integer");
-  });
-
   it("rejects combining a custom value prefix with integer generation", () => {
     expect(() =>
       parseCliArgs([

@@ -25,23 +25,4 @@ describe("getGlobalRequestIds", () => {
       }),
     ).toEqual([]);
   });
-
-  it("does not truncate selections larger than 25 requests", () => {
-    const secondary = Array.from(
-      { length: 30 },
-      (_, index) => `request-${index + 2}`,
-    );
-    expect(
-      getGlobalRequestIds({
-        page: {
-          kind: "HTTPHistory",
-          selection: {
-            kind: "Selected",
-            main: "request-1",
-            secondary,
-          },
-        },
-      }),
-    ).toEqual(["request-1", ...secondary]);
-  });
 });

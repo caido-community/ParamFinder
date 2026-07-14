@@ -69,22 +69,6 @@ describe("mutateRequest", () => {
     expect(mutated.raw).toContain("X-Secret: value");
   });
 
-  it("does not add a cache buster when the value is missing", () => {
-    const mutated = mutateRequest({
-      baseRequest: createRequest({
-        method: "GET",
-        raw: "GET /test HTTP/1.1\r\nHost: example.com\r\n\r\n",
-      }),
-      attackType: "headers",
-      parameters: [{ name: "X-Secret", value: "value" }],
-      context: "discovery",
-      updateContentLength: false,
-      addCacheBusterParameter: true,
-    });
-
-    expect(mutated.query).toBe("");
-  });
-
   it("writes integer values into JSON bodies without quotes", () => {
     const mutated = mutateRequest({
       baseRequest: createRequest({

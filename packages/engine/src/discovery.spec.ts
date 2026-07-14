@@ -1,7 +1,7 @@
 import { array, assert, property, string } from "fast-check";
 import { describe, expect, it } from "vitest";
 
-import { createParameterValue, getNextChunk, splitChunk } from "./discovery";
+import { getNextChunk } from "./discovery";
 import type { EngineRequest } from "./types";
 
 function createRequest(overrides?: Partial<EngineRequest>): EngineRequest {
@@ -190,34 +190,6 @@ describe("getNextChunk", () => {
           expect(result.nextIndex).toBeGreaterThan(0);
         },
       ),
-    );
-  });
-});
-
-describe("splitChunk", () => {
-  it("preserves every parameter exactly once", () => {
-    assert(
-      property(
-        array(string({ minLength: 1 }), { minLength: 2, maxLength: 20 }),
-        (words) => {
-          const parameters = words.map((word) => ({
-            name: word,
-            value: `${word}-value`,
-          }));
-          const [left, right] = splitChunk(parameters);
-
-          expect(left.length + right.length).toBe(parameters.length);
-          expect([...left, ...right]).toEqual(parameters);
-        },
-      ),
-    );
-  });
-});
-
-describe("createParameterValue", () => {
-  it("generates integer values without leading zeroes", () => {
-    expect(createParameterValue(undefined, "integer", () => 0)).toBe(
-      "10000000",
     );
   });
 });

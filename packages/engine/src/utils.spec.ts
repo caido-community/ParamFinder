@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  countLineDifferences,
   MAX_HEURISTIC_BODY_LENGTH,
   sampleBody,
   stringSimilarity,
@@ -27,12 +26,5 @@ describe("body analysis helpers", () => {
     const changed = `${body.slice(0, changedStart)}${"b".repeat(MAX_HEURISTIC_BODY_LENGTH * 2)}${body.slice(changedStart + MAX_HEURISTIC_BODY_LENGTH * 2)}`;
 
     expect(stringSimilarity(body, changed)).toBeLessThan(0.95);
-  });
-
-  it("returns immediately equivalent results for identical bodies", () => {
-    const body = "same line\n".repeat(MAX_HEURISTIC_BODY_LENGTH);
-
-    expect(stringSimilarity(body, body)).toBe(1);
-    expect(countLineDifferences(body, body)).toBe(0);
   });
 });

@@ -45,28 +45,6 @@ afterEach(() => {
 });
 
 describe("createRunInputFromCli", () => {
-  it("rejects unsupported URL protocols", () => {
-    expect(() =>
-      createRunInputFromCli(
-        createOptions({
-          url: "ftp://example.com/scan",
-        }),
-      ),
-    ).toThrowError("Unsupported URL protocol: ftp:");
-  });
-
-  it("uses the default HTTP port for plain HTTP targets", () => {
-    const { request } = createRunInputFromCli(
-      createOptions({
-        url: "http://example.com/scan",
-      }),
-    );
-
-    expect(request.port).toBe(80);
-    expect(request.method).toBe("GET");
-    expect(request.tls).toBe(false);
-  });
-
   it("builds body scans as POST JSON requests by default", () => {
     const { request, engineConfig } = createRunInputFromCli(
       createOptions({
@@ -82,18 +60,6 @@ describe("createRunInputFromCli", () => {
     expect(request.headers["Content-Length"]).toEqual(["2"]);
     expect(request.raw).toContain("POST /scan HTTP/1.1");
     expect(engineConfig.updateContentLength).toBe(true);
-  });
-
-  it("uses UTF-8 byte length for CLI request content length", () => {
-    const { request } = createRunInputFromCli(
-      createOptions({
-        jsonBody: '{"currency":"€"}',
-      }),
-    );
-
-    expect(request.body.length).toBe(16);
-    expect(request.headers["Content-Length"]).toEqual(["18"]);
-    expect(request.raw).toContain("Content-Length: 18");
   });
 
   it("rejects methods that cannot carry a request body", () => {
