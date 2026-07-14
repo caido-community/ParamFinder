@@ -37,12 +37,33 @@ export type Settings = z.infer<typeof settingsSchema>;
 export const settingsChangesSchema = settingsSchema.partial().strict();
 export type SettingsChanges = z.infer<typeof settingsChangesSchema>;
 
-export const paramMinerConfigSchema = engineConfigSchema.safeExtend({
+const normalizedParamMinerConfigSchema = engineConfigSchema.safeExtend({
   delayBetweenRequests: z.number().int().nonnegative(),
   requestTimeoutSeconds: z.number().positive().optional(),
   scanTimeoutSeconds: z.number().positive().optional(),
   debug: z.boolean(),
 });
+
+export const paramMinerConfigSchema = z.preprocess((value) => {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    return value;
+  }
+
+  const config = value as Record<string, unknown>;
+  return {
+    ...config,
+    autopilotEnabled:
+      config.autopilotEnabled === undefined
+        ? config.attackType === "query"
+        : config.autopilotEnabled,
+    ignoreCloudflareBlocks:
+      config.ignoreCloudflareBlocks === undefined
+        ? false
+        : config.ignoreCloudflareBlocks,
+    customValueType:
+      config.customValueType === undefined ? "string" : config.customValueType,
+  };
+}, normalizedParamMinerConfigSchema);
 export type ParamMinerConfig = z.infer<typeof paramMinerConfigSchema>;
 
 export function settingsToParamMinerConfig(

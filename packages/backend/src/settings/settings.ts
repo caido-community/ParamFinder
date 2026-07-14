@@ -1,6 +1,7 @@
 import { readFile, rename, writeFile } from "fs/promises";
 import path from "path";
 
+import { isRecordObject } from "@paramfinder/engine";
 import type { SDK } from "caido:plugin";
 import { type Settings, settingsSchema } from "shared";
 
@@ -99,10 +100,7 @@ function migrateSettings(raw: unknown): {
   const current = settingsSchema.safeParse(raw);
   if (current.success) return { settings: current.data, changed: false };
 
-  const legacy =
-    typeof raw === "object" && raw !== null
-      ? (raw as Record<string, unknown>)
-      : {};
+  const legacy = isRecordObject(raw) ? raw : {};
   // Legacy `timeout` (seconds) was renamed to `requestTimeoutSeconds`.
   const legacyTimeout =
     typeof legacy.timeout === "number" && legacy.timeout > 0

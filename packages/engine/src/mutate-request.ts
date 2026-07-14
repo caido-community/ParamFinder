@@ -14,6 +14,7 @@ import {
   type RequestContext,
 } from "./types";
 import { getUtf8ByteLength } from "./utils";
+import { isRecordObject } from "./value-guards";
 
 interface MutateRequestOptions {
   baseRequest: EngineRequest;
@@ -398,10 +399,6 @@ function isMutableBodyKind(
   bodyKind: InspectableBodyKind,
 ): bodyKind is MutableBodyKind {
   return MUTABLE_BODY_KINDS.includes(bodyKind as MutableBodyKind);
-}
-
-function isRecordObject(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }
 
 function toJsonParameterValue(

@@ -1,5 +1,7 @@
 import { getProperty, parsePath, stringifyPath } from "dot-prop";
 
+import { isRecordObject } from "./value-guards";
+
 export type JsonBodyPathSegment = string | number;
 
 export function parseJsonBodyPath(
@@ -100,8 +102,4 @@ function stripRootSelector(path: string): string {
   }
 
   return path;
-}
-
-function isRecordObject(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === "object" && !Array.isArray(value);
 }

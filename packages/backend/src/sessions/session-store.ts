@@ -547,6 +547,7 @@ export function initSessionStore(
   sessionStore ??= new SessionStore(sdk, database);
   return sessionStore;
 }
+
 export function getSessionStore(): SessionStore {
   if (sessionStore === undefined)
     throw new Error("Session store not initialized");

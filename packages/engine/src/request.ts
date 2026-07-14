@@ -160,11 +160,7 @@ export function canSendRequestBody(method: string): boolean {
 }
 
 function createRequestId(): string {
-  if (typeof globalThis.crypto?.randomUUID === "function") {
-    return globalThis.crypto.randomUUID();
-  }
-
-  return `request-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  return `req-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
 function normalizeHeaders(headers?: HeaderInput): HeaderMap {

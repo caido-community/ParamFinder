@@ -98,19 +98,10 @@ function completeProjectLoad(
   const sessions = Object.fromEntries(
     snapshot.sessions.map((session) => [session.ref.sessionId, session]),
   );
-  const sessionIds = new Set(Object.keys(sessions));
-  const caches = Object.fromEntries(
-    Object.entries(model.caches).filter(([key]) => {
-      const [projectId, sessionId] = key.split("\u0000");
-      return (
-        projectId === snapshot.projectId && sessionIds.has(sessionId ?? "")
-      );
-    }),
-  );
   return {
     ...model,
     sessions,
-    caches,
+    caches: {},
     revision: snapshot.revision,
     hydrated: true,
   };

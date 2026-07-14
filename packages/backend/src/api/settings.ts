@@ -11,7 +11,8 @@ import { getSettingsStore } from "../settings/settings";
 import type { BackendSDK } from "../types/types";
 
 export async function getSettings(_: BackendSDK): Promise<ApiResult<Settings>> {
-  return ok(await getSettingsStore().getSettings());
+  const settingsStore = getSettingsStore();
+  return ok(await settingsStore.getSettings());
 }
 
 export async function patchSettings(
@@ -26,7 +27,8 @@ export async function patchSettings(
   }
 
   try {
-    return ok(await getSettingsStore().patchSettings(parsed.data));
+    const settingsStore = getSettingsStore();
+    return ok(await settingsStore.patchSettings(parsed.data));
   } catch (cause) {
     if (cause instanceof TypeError) return error(cause.message, "VALIDATION");
     throw cause;
@@ -36,5 +38,6 @@ export async function patchSettings(
 export async function getSettingsPath(
   _: BackendSDK,
 ): Promise<ApiResult<string>> {
-  return ok(getSettingsStore().getSettingsPath());
+  const settingsStore = getSettingsStore();
+  return ok(settingsStore.getSettingsPath());
 }

@@ -58,7 +58,6 @@ const submit = async () => {
     );
     if (
       showResult(result, {
-        successMessage: "Wordlist created",
         errorPrefix: "Failed to create wordlist",
       })
     ) {

@@ -68,7 +68,6 @@ export function useHttpEditor(
       raw: toCrlf(current),
       connectionInfo: { host, port, isTLS: isTls },
     });
-    sdk.window.showToast("Sent to Replay", { variant: "success" });
   };
 
   const menuItems = [

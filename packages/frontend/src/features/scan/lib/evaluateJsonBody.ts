@@ -1,3 +1,5 @@
+import { isRecordObject } from "@paramfinder/engine";
+
 export type BodyState =
   | { kind: "empty" }
   | { kind: "not-json"; reason: string }
@@ -10,7 +12,7 @@ export function evaluateJsonBody(raw?: string): BodyState {
 
   try {
     const value: unknown = JSON.parse(raw);
-    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+    if (!isRecordObject(value)) {
       return {
         kind: "not-json",
         reason: "Body must be a JSON object at the root.",

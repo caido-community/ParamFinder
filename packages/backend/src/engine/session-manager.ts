@@ -82,12 +82,14 @@ export async function startEngineSession(
       );
     }
 
-    const created = await getSessionStore().createNextSession(
+    const sessionStore = getSessionStore();
+    const created = await sessionStore.createNextSession(
       projectId,
       words.length,
       config.learnRequestsCount,
       { targetRequest: target, config },
     );
+
     const ref = created.session.ref;
     const controller = new AbortController();
     const runControl = new RunControl();
@@ -204,7 +206,8 @@ export async function cancelEngineSession(
 ): Promise<ApiResult<void>> {
   const session = runningSessions.get(sessionKey(ref));
   if (session === undefined) {
-    const stored = await getSessionStore().getSession(ref);
+    const sessionStore = getSessionStore();
+    const stored = await sessionStore.getSession(ref);
     return stored !== undefined && terminalStates.has(stored.state)
       ? ok(undefined)
       : error("Session is no longer running.", "NOT_FOUND");
@@ -377,7 +380,8 @@ async function persistDiscoveryEvent(
       );
       return;
     case "adjustTotalParameters": {
-      const updated = await getSessionStore().setTotalParametersAmount(
+      const sessionStore = getSessionStore();
+      const updated = await sessionStore.setTotalParametersAmount(
         ref,
         event.totalParametersAmount,
       );
@@ -405,7 +409,8 @@ async function queueEntry(
   if (!isCurrentSession(ref, running) || terminalStates.has(running.state))
     return;
 
-  const persisted = await getSessionStore().appendEntries(ref, [entry]);
+  const sessionStore = getSessionStore();
+  const persisted = await sessionStore.appendEntries(ref, [entry]);
   if (persisted === undefined || !isCurrentSession(ref, running)) return;
 
   emitSessionChanges(sdk, ref.projectId, persisted.revision, [
@@ -429,7 +434,8 @@ async function persistState(
   if (running.state === lifecycle.state && running.phase === lifecycle.phase)
     return;
 
-  const updated = await getSessionStore().transitionSession(ref, lifecycle);
+  const sessionStore = getSessionStore();
+  const updated = await sessionStore.transitionSession(ref, lifecycle);
   if (updated && isCurrentSession(ref, running)) {
     running.state = lifecycle.state;
     running.phase = lifecycle.phase;
@@ -450,7 +456,8 @@ async function persistTerminal(
 ): Promise<void> {
   if (!isCurrentSession(ref, running) || !running.finalizing) return;
 
-  const updated = await getSessionStore().transitionSession(ref, lifecycle);
+  const sessionStore = getSessionStore();
+  const updated = await sessionStore.transitionSession(ref, lifecycle);
   if (updated && isCurrentSession(ref, running)) {
     running.state = lifecycle.state;
     running.phase = lifecycle.phase;

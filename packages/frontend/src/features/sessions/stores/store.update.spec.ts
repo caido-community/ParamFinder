@@ -77,6 +77,37 @@ describe("sessions update", () => {
     expect(loading.actionLoading).toEqual({});
   });
 
+  it("drops entry caches when applying an authoritative snapshot", () => {
+    const session = descriptor("active");
+    const key = cacheKey(session.ref, "log");
+    const model = {
+      ...initialModel,
+      currentProjectId: "project",
+      generation: 1,
+      sessions: { active: session },
+      caches: {
+        [key]: {
+          ...createEntryCache({ field: "sequence", direction: "asc" }),
+          loading: true,
+          stale: false,
+        },
+      },
+    };
+
+    const hydrated = update(model, {
+      type: "PROJECT_LOAD_SUCCESS",
+      generation: 1,
+      snapshot: {
+        version: 2,
+        projectId: "project",
+        revision: 2,
+        sessions: [session],
+      },
+    });
+
+    expect(hydrated.caches).toEqual({});
+  });
+
   it("applies only the next project revision", () => {
     const model = {
       ...initialModel,

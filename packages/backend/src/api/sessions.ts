@@ -26,7 +26,8 @@ export async function listSessions(
     return error("Invalid project ID.", "VALIDATION");
   }
 
-  return ok(await getSessionStore().listSessions(input.data));
+  const sessionStore = getSessionStore();
+  return ok(await sessionStore.listSessions(input.data));
 }
 
 export async function getSessionEntries(
@@ -41,7 +42,8 @@ export async function getSessionEntries(
   }
 
   try {
-    const page = await getSessionStore().getEntries(parsed.data);
+    const sessionStore = getSessionStore();
+    const page = await sessionStore.getEntries(parsed.data);
     return page === undefined
       ? error("Session not found.", "NOT_FOUND")
       : ok(page);
@@ -64,7 +66,8 @@ export async function deleteSessions(
 
   const validRefs = input.data;
 
-  const revisions = await getSessionStore().deleteSessions(validRefs);
+  const sessionStore = getSessionStore();
+  const revisions = await sessionStore.deleteSessions(validRefs);
   tombstoneRunningSessions(validRefs);
 
   for (const [projectId, revision] of revisions) {
@@ -82,5 +85,6 @@ export async function deleteSessions(
 export async function getCurrentProjectId(
   _: BackendSDK,
 ): Promise<ApiResult<string | undefined>> {
-  return ok(await getSessionStore().getCurrentProjectId());
+  const sessionStore = getSessionStore();
+  return ok(await sessionStore.getCurrentProjectId());
 }

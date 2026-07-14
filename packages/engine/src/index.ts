@@ -40,6 +40,7 @@ export {
 export { RunControl } from "./run-control";
 export { runDiscoveryScan } from "./scan";
 export { validateMutationTarget } from "./mutate-request";
+export { isRecordObject } from "./value-guards";
 export {
   AnomalyType,
   AttackType,

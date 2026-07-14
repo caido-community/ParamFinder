@@ -169,6 +169,40 @@ describe("SessionStore reliability", () => {
     });
   });
 
+  it("normalizes legacy rerun configs when reading sessions", async () => {
+    const store = await createStore();
+    const ref: SessionRef = { projectId: projectA, sessionId: "legacy-config" };
+    await store.createSession(ref, 1, 3, createRerun());
+
+    const config: Record<string, unknown> = { ...createConfig() };
+    delete config.autopilotEnabled;
+    delete config.ignoreCloudflareBlocks;
+    delete config.customValueType;
+
+    const database = new DatabaseSync(path.join(directory, "meta.db"));
+    database
+      .prepare(
+        `UPDATE paramfinder_sessions SET rerun_json = ?
+         WHERE project_id = ? AND session_id = ?`,
+      )
+      .run(
+        JSON.stringify({ targetRequest: createRequest(), config }),
+        ref.projectId,
+        ref.sessionId,
+      );
+    database.close();
+
+    await expect(store.getSession(ref)).resolves.toMatchObject({
+      rerun: {
+        config: {
+          autopilotEnabled: true,
+          ignoreCloudflareBlocks: false,
+          customValueType: "string",
+        },
+      },
+    });
+  });
+
   it("assigns the next session ID from the largest stored numeric ID", async () => {
     const store = await createStore();
     await store.createSession(

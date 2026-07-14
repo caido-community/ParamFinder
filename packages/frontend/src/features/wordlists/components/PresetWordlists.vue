@@ -19,7 +19,6 @@ const importPreset = async (preset: (typeof wordlistPresets)[number]) => {
   try {
     const filename = `${preset.name.replaceAll("/", "-")}.txt`;
     showResult(await wordlistsStore.importRemote(filename, preset.url), {
-      successMessage: `Imported preset ${preset.name}`,
       errorPrefix: "Failed to import preset",
     });
   } finally {
