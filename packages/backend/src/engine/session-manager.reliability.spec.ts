@@ -13,8 +13,10 @@ import type {
   SessionDescriptor,
   SessionEntry,
   SessionEntryInput,
+  SessionLifecycle,
   SessionRef,
 } from "shared";
+import { sessionDescriptorSchema } from "shared";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { BackendSDK } from "../types/types";
@@ -156,10 +158,22 @@ function createStore() {
       return { revision, session: structuredClone(session) };
     }),
     getSession: vi.fn(async () => structuredClone(session)),
-    updateSession: vi.fn(
-      async (_ref: SessionRef, changes: Partial<SessionDescriptor>) => {
-        operations.push(`update:${changes.state ?? "counters"}`);
-        session = { ...session, ...changes, updatedAt: session.updatedAt + 1 };
+    transitionSession: vi.fn(
+      async (_ref: SessionRef, lifecycle: SessionLifecycle) => {
+        operations.push(`update:${lifecycle.state}`);
+        session = sessionDescriptorSchema.parse({
+          ...session,
+          ...lifecycle,
+          updatedAt: session.updatedAt + 1,
+        });
+        revision += 1;
+        return { revision, session: structuredClone(session) };
+      },
+    ),
+    setTotalParametersAmount: vi.fn(
+      async (_ref: SessionRef, totalParametersAmount: number) => {
+        operations.push("update:counters");
+        session = { ...session, totalParametersAmount };
         revision += 1;
         return { revision, session: structuredClone(session) };
       },
@@ -327,7 +341,7 @@ describe("session manager reliability", () => {
 
   it("terminalizes a created session when startup persistence fails", async () => {
     const sdk = createSdk();
-    store.updateSession.mockRejectedValueOnce(
+    store.transitionSession.mockRejectedValueOnce(
       new Error("database unavailable"),
     );
 
@@ -622,10 +636,12 @@ describe("session manager reliability", () => {
       .find((change) => change.type === "terminal");
     expect(terminal).toMatchObject({
       type: "terminal",
-      session: { state: EngineState.Error },
-      error: {
-        code: "IO",
-        message: expect.stringContaining("database unavailable"),
+      session: {
+        state: EngineState.Error,
+        error: {
+          code: "IO",
+          message: expect.stringContaining("database unavailable"),
+        },
       },
     });
   });
@@ -638,7 +654,7 @@ describe("session manager reliability", () => {
       createRequest(),
       createConfig(),
     );
-    store.updateSession.mockRejectedValueOnce(
+    store.transitionSession.mockRejectedValueOnce(
       new Error("database unavailable"),
     );
 
@@ -648,7 +664,7 @@ describe("session manager reliability", () => {
       expect(store.current().state).toBe(EngineState.Completed),
     );
     expect(
-      store.updateSession.mock.calls.filter(
+      store.transitionSession.mock.calls.filter(
         ([, changes]) => changes.state === EngineState.Completed,
       ),
     ).toHaveLength(2);
@@ -662,16 +678,18 @@ describe("session manager reliability", () => {
       createRequest(),
       createConfig(),
     );
-    const updateSession = store.updateSession.getMockImplementation();
-    store.updateSession.mockRejectedValue(new Error("database unavailable"));
+    const transitionSession = store.transitionSession.getMockImplementation();
+    store.transitionSession.mockRejectedValue(
+      new Error("database unavailable"),
+    );
 
     scan.resolve(scanResult(EngineState.Completed, EnginePhase.Discovery));
     await vi.waitFor(() =>
-      expect(store.updateSession).toHaveBeenCalledTimes(3),
+      expect(store.transitionSession).toHaveBeenCalledTimes(3),
     );
     expect(store.current().state).toBe(EngineState.Learning);
 
-    store.updateSession.mockImplementation(updateSession!);
+    store.transitionSession.mockImplementation(transitionSession!);
     await expect(cancelEngineSession(sdk, ref)).resolves.toEqual({
       success: true,
       value: undefined,
@@ -697,7 +715,7 @@ describe("session manager reliability", () => {
     await vi.waitFor(() =>
       expect(store.current().state).toBe(EngineState.Learning),
     );
-    store.updateSession.mockImplementationOnce(async () => {
+    store.transitionSession.mockImplementationOnce(async () => {
       throw new Error("database unavailable");
     });
 

@@ -613,7 +613,7 @@ describe("SessionStore reliability", () => {
     const appended = await store.appendEntries(ref, [
       { kind: "log", value: "created" },
     ]);
-    const updated = await store.updateSession(ref, {
+    const updated = await store.transitionSession(ref, {
       state: EngineState.Running,
       phase: EnginePhase.Discovery,
     });
@@ -638,7 +638,7 @@ describe("SessionStore reliability", () => {
       sessionId: "completed",
     };
     await original.createSession(interrupted, 10, 3, createRerun());
-    await original.updateSession(interrupted, {
+    await original.transitionSession(interrupted, {
       state: EngineState.Running,
       phase: EnginePhase.Discovery,
     });
@@ -646,7 +646,7 @@ describe("SessionStore reliability", () => {
     await original.appendEntries(completed, [
       { kind: "request", value: createSentRequest(1) },
     ]);
-    await original.updateSession(completed, {
+    await original.transitionSession(completed, {
       state: EngineState.Completed,
       phase: EnginePhase.Discovery,
     });

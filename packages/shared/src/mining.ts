@@ -7,7 +7,8 @@ import {
   anomalyTypeSchema,
   attackTypeSchema,
   enginePhaseSchema,
-  engineStateSchema,
+  MiningSessionPhase,
+  MiningSessionState,
   parameterSchema,
   requestContextSchema,
   requestSchema,
@@ -120,10 +121,8 @@ export function compareSessionIds(left: string, right: string): number {
   return left < right ? -1 : 1;
 }
 
-export const sessionDescriptorSchema = z.object({
+const sessionDescriptorBaseSchema = z.object({
   ref: sessionRefSchema,
-  state: engineStateSchema,
-  phase: enginePhaseSchema,
   totalParametersAmount: z.number().int().nonnegative(),
   totalLearnRequests: z.number().int().nonnegative(),
   parametersSent: z.number().int().nonnegative(),
@@ -133,9 +132,93 @@ export const sessionDescriptorSchema = z.object({
   createdAt: z.number().int().nonnegative(),
   updatedAt: z.number().int().nonnegative(),
   rerun: sessionRerunSchema.optional(),
-  error: apiErrorSchema.optional(),
 });
+
+const noSessionErrorSchema = z.undefined().optional();
+const pendingSessionLifecycleSchema = z.object({
+  state: z.literal(MiningSessionState.Pending),
+  phase: z.literal(MiningSessionPhase.Idle),
+  error: noSessionErrorSchema,
+});
+const learningSessionLifecycleSchema = z.object({
+  state: z.literal(MiningSessionState.Learning),
+  phase: z.literal(MiningSessionPhase.Learning),
+  error: noSessionErrorSchema,
+});
+const runningSessionLifecycleSchema = z.object({
+  state: z.literal(MiningSessionState.Running),
+  phase: z.literal(MiningSessionPhase.Discovery),
+  error: noSessionErrorSchema,
+});
+const pausedSessionLifecycleSchema = z.object({
+  state: z.literal(MiningSessionState.Paused),
+  phase: enginePhaseSchema,
+  error: noSessionErrorSchema,
+});
+const completedSessionLifecycleSchema = z.object({
+  state: z.literal(MiningSessionState.Completed),
+  phase: z.literal(MiningSessionPhase.Discovery),
+  error: noSessionErrorSchema,
+});
+const canceledSessionLifecycleSchema = z.object({
+  state: z.literal(MiningSessionState.Canceled),
+  phase: enginePhaseSchema,
+  error: noSessionErrorSchema,
+});
+const timeoutSessionLifecycleSchema = z.object({
+  state: z.literal(MiningSessionState.Timeout),
+  phase: z.enum([MiningSessionPhase.Learning, MiningSessionPhase.Discovery]),
+  error: noSessionErrorSchema,
+});
+const errorSessionLifecycleSchema = z.object({
+  state: z.literal(MiningSessionState.Error),
+  phase: enginePhaseSchema,
+  error: apiErrorSchema,
+});
+
+export const nonTerminalSessionLifecycleSchema = z.discriminatedUnion("state", [
+  pendingSessionLifecycleSchema,
+  learningSessionLifecycleSchema,
+  runningSessionLifecycleSchema,
+  pausedSessionLifecycleSchema,
+]);
+export type NonTerminalSessionLifecycle = z.infer<
+  typeof nonTerminalSessionLifecycleSchema
+>;
+
+export const sessionLifecycleSchema = z.discriminatedUnion("state", [
+  pendingSessionLifecycleSchema,
+  learningSessionLifecycleSchema,
+  runningSessionLifecycleSchema,
+  pausedSessionLifecycleSchema,
+  completedSessionLifecycleSchema,
+  canceledSessionLifecycleSchema,
+  timeoutSessionLifecycleSchema,
+  errorSessionLifecycleSchema,
+]);
+export type SessionLifecycle = z.infer<typeof sessionLifecycleSchema>;
+
+export const terminalSessionLifecycleSchema = z.discriminatedUnion("state", [
+  completedSessionLifecycleSchema,
+  canceledSessionLifecycleSchema,
+  timeoutSessionLifecycleSchema,
+  errorSessionLifecycleSchema,
+]);
+export type TerminalSessionLifecycle = z.infer<
+  typeof terminalSessionLifecycleSchema
+>;
+
+export const sessionDescriptorSchema = sessionDescriptorBaseSchema.and(
+  sessionLifecycleSchema,
+);
 export type SessionDescriptor = z.infer<typeof sessionDescriptorSchema>;
+
+export const terminalSessionDescriptorSchema = sessionDescriptorBaseSchema.and(
+  terminalSessionLifecycleSchema,
+);
+export type TerminalSessionDescriptor = z.infer<
+  typeof terminalSessionDescriptorSchema
+>;
 
 export const projectSessionSnapshotSchema = z.object({
   version: z.literal(2),
@@ -214,8 +297,7 @@ export const sessionChangeSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("delete"), refs: z.array(sessionRefSchema) }),
   z.object({
     type: z.literal("terminal"),
-    session: sessionDescriptorSchema,
-    error: apiErrorSchema.optional(),
+    session: terminalSessionDescriptorSchema,
   }),
 ]);
 export type SessionChange = z.infer<typeof sessionChangeSchema>;

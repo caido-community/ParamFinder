@@ -1,6 +1,7 @@
 import {
   compareSessionIds,
   type CursorPage,
+  type NonTerminalSessionLifecycle,
   type ProjectSessionSnapshot,
   type SessionDescriptor,
   sessionDescriptorSchema,
@@ -9,8 +10,11 @@ import {
   type SessionEntryInput,
   sessionEntrySchema,
   type SessionEntrySortField,
+  type SessionLifecycle,
   type SessionRef,
   type SessionRerun,
+  type TerminalSessionDescriptor,
+  type TerminalSessionLifecycle,
 } from "shared";
 import type { Database, Parameter } from "sqlite";
 
@@ -178,29 +182,49 @@ export class SessionStore {
     };
   }
 
-  async updateSession(
+  async transitionSession(
     ref: SessionRef,
-    changes: Partial<
-      Pick<
-        SessionDescriptor,
-        | "state"
-        | "phase"
-        | "totalParametersAmount"
-        | "parametersSent"
-        | "requestsSent"
-        | "error"
-      >
-    >,
+    lifecycle: TerminalSessionLifecycle,
+  ): Promise<
+    { revision: number; session: TerminalSessionDescriptor } | undefined
+  >;
+  async transitionSession(
+    ref: SessionRef,
+    lifecycle: NonTerminalSessionLifecycle,
+  ): Promise<{ revision: number; session: SessionDescriptor } | undefined>;
+  async transitionSession(
+    ref: SessionRef,
+    lifecycle: SessionLifecycle,
   ): Promise<{ revision: number; session: SessionDescriptor } | undefined> {
     return this.write(async () => {
       const previous = await this.getSession(ref);
       if (previous === undefined) return undefined;
 
-      const session: SessionDescriptor = {
+      const session = sessionDescriptorSchema.parse({
         ...previous,
-        ...changes,
+        ...lifecycle,
         updatedAt: Date.now(),
-      };
+      });
+      const database = this.dbWithoutReady();
+      await updateSessionRow(database, session);
+      await incrementRevision(database, ref.projectId);
+      return { revision: await this.getRevision(ref.projectId), session };
+    });
+  }
+
+  async setTotalParametersAmount(
+    ref: SessionRef,
+    totalParametersAmount: number,
+  ): Promise<{ revision: number; session: SessionDescriptor } | undefined> {
+    return this.write(async () => {
+      const previous = await this.getSession(ref);
+      if (previous === undefined) return undefined;
+
+      const session = sessionDescriptorSchema.parse({
+        ...previous,
+        totalParametersAmount,
+        updatedAt: Date.now(),
+      });
       const database = this.dbWithoutReady();
       await updateSessionRow(database, session);
       await incrementRevision(database, ref.projectId);
@@ -211,9 +235,6 @@ export class SessionStore {
   async appendEntries(
     ref: SessionRef,
     values: SessionEntryInput[],
-    counterChanges: Partial<
-      Pick<SessionDescriptor, "totalParametersAmount">
-    > = {},
   ): Promise<
     | { revision: number; session: SessionDescriptor; entries: SessionEntry[] }
     | undefined
@@ -252,9 +273,6 @@ export class SessionStore {
 
       const session: SessionDescriptor = {
         ...previous,
-        totalParametersAmount:
-          counterChanges.totalParametersAmount ??
-          previous.totalParametersAmount,
         parametersSent: previous.parametersSent + parameters,
         requestsSent: previous.requestsSent + requests,
         findingsCount: previous.findingsCount + findings,

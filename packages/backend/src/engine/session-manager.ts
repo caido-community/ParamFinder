@@ -12,6 +12,8 @@ import {
   type ApiError,
   type ApiResult,
   error,
+  type NonTerminalSessionLifecycle,
+  nonTerminalSessionLifecycleSchema,
   ok,
   type ParamMinerConfig,
   type Request,
@@ -20,6 +22,7 @@ import {
   type SessionEntryInput,
   type SessionFinding,
   type SessionRef,
+  type TerminalSessionLifecycle,
 } from "shared";
 
 import { emitSessionChanges } from "../sessions/session-events";
@@ -38,7 +41,6 @@ interface RunningSession {
   runControl: RunControl;
   state: EngineState;
   phase: EnginePhase;
-  stateBeforePause?: EngineState;
   eventChain: Promise<void>;
   acceptingEvents: boolean;
   finalizing: boolean;
@@ -114,8 +116,10 @@ export async function startEngineSession(
       started = await persistState(
         sdk,
         ref,
-        EngineState.Learning,
-        EnginePhase.Learning,
+        {
+          state: EngineState.Learning,
+          phase: EnginePhase.Learning,
+        },
         running,
       );
       if (started === undefined) {
@@ -161,27 +165,20 @@ export async function startEngineSession(
             sdk,
             ref,
             running,
-            summary.state,
-            summary.phase,
-            summary.state === EngineState.Error
-              ? { code: "INTERNAL", message: summary.failureReason }
-              : undefined,
+            toTerminalSessionLifecycle(summary),
           );
         },
         async (cause: unknown) => {
           const current = runningSessions.get(sessionKey(ref));
           if (current !== running || !beginFinalization(running)) return;
-          await finalizeRunningSession(
-            sdk,
-            ref,
-            running,
-            EngineState.Error,
-            running.phase,
-            {
+          await finalizeRunningSession(sdk, ref, running, {
+            state: EngineState.Error,
+            phase: running.phase,
+            error: {
               code: "INTERNAL",
               message: running.eventError?.message ?? getErrorMessage(cause),
             },
-          );
+          });
         },
       )
       .catch((cause: unknown) => {
@@ -220,9 +217,13 @@ export async function cancelEngineSession(
     sdk,
     ref,
     session,
-    EngineState.Canceled,
-    session.phase,
-    session.eventError,
+    session.eventError === undefined
+      ? { state: EngineState.Canceled, phase: session.phase }
+      : {
+          state: EngineState.Error,
+          phase: session.phase,
+          error: session.eventError,
+        },
   );
 
   return session.eventError
@@ -247,8 +248,6 @@ export async function pauseEngineSession(
   }
 
   session.runControl.pause();
-  session.stateBeforePause = session.state;
-
   try {
     await drainEvents(session);
     if (session.finalizing) return ok(undefined);
@@ -256,7 +255,12 @@ export async function pauseEngineSession(
       rollbackPause(session);
       return error(session.eventError.message, "IO");
     }
-    await persistState(sdk, ref, EngineState.Paused, session.phase, session);
+    await persistState(
+      sdk,
+      ref,
+      { state: EngineState.Paused, phase: session.phase },
+      session,
+    );
     return ok(undefined);
   } catch (cause) {
     rollbackPause(session);
@@ -278,13 +282,12 @@ export async function resumeEngineSession(
     return error(`Cannot resume a ${session.state} session.`, "CONFLICT");
   }
 
-  const resumedState =
-    session.stateBeforePause ?? getActiveStateForPhase(session.phase);
+  const resumedLifecycle = getActiveLifecycleForPhase(session.phase);
 
   await drainEvents(session);
   if (session.finalizing) return ok(undefined);
   if (session.eventError) return error(session.eventError.message, "IO");
-  await persistState(sdk, ref, resumedState, session.phase, session);
+  await persistState(sdk, ref, resumedLifecycle, session);
   session.runControl.resume();
   return ok(undefined);
 }
@@ -336,7 +339,15 @@ async function persistDiscoveryEvent(
     case "state":
     case "completed":
       if (!terminalStates.has(event.state)) {
-        await persistState(sdk, ref, event.state, event.phase, running);
+        await persistState(
+          sdk,
+          ref,
+          nonTerminalSessionLifecycleSchema.parse({
+            state: event.state,
+            phase: event.phase,
+          }),
+          running,
+        );
       }
       return;
     case "log":
@@ -366,9 +377,10 @@ async function persistDiscoveryEvent(
       );
       return;
     case "adjustTotalParameters": {
-      const updated = await getSessionStore().updateSession(ref, {
-        totalParametersAmount: event.totalParametersAmount,
-      });
+      const updated = await getSessionStore().setTotalParametersAmount(
+        ref,
+        event.totalParametersAmount,
+      );
       if (updated && isCurrentSession(ref, running))
         emitSessionChanges(sdk, ref.projectId, updated.revision, [
           { type: "upsert", session: updated.session },
@@ -409,19 +421,18 @@ async function queueEntry(
 async function persistState(
   sdk: BackendSDK,
   ref: SessionRef,
-  state: EngineState,
-  phase: EnginePhase,
+  lifecycle: NonTerminalSessionLifecycle,
   running: RunningSession,
 ): Promise<SessionDescriptor | undefined> {
   if (!isCurrentSession(ref, running) || terminalStates.has(running.state))
     return;
-  if (running.state === state && running.phase === phase) return;
+  if (running.state === lifecycle.state && running.phase === lifecycle.phase)
+    return;
 
-  const updated = await getSessionStore().updateSession(ref, { state, phase });
+  const updated = await getSessionStore().transitionSession(ref, lifecycle);
   if (updated && isCurrentSession(ref, running)) {
-    running.state = state;
-    running.phase = phase;
-    if (state !== EngineState.Paused) running.stateBeforePause = undefined;
+    running.state = lifecycle.state;
+    running.phase = lifecycle.phase;
     emitSessionChanges(sdk, ref.projectId, updated.revision, [
       { type: "upsert", session: updated.session },
     ]);
@@ -434,28 +445,21 @@ async function persistState(
 async function persistTerminal(
   sdk: BackendSDK,
   ref: SessionRef,
-  state: EngineState,
-  phase: EnginePhase,
   running: RunningSession,
-  terminalError?: ApiError,
+  lifecycle: TerminalSessionLifecycle,
 ): Promise<void> {
   if (!isCurrentSession(ref, running) || !running.finalizing) return;
 
-  const updated = await getSessionStore().updateSession(ref, {
-    state,
-    phase,
-    error: terminalError,
-  });
+  const updated = await getSessionStore().transitionSession(ref, lifecycle);
   if (updated && isCurrentSession(ref, running)) {
-    running.state = state;
-    running.phase = phase;
+    running.state = lifecycle.state;
+    running.phase = lifecycle.phase;
     running.controller.abort();
     try {
       emitSessionChanges(sdk, ref.projectId, updated.revision, [
         {
           type: "terminal",
           session: updated.session,
-          error: terminalError,
         },
       ]);
     } catch (cause) {
@@ -470,21 +474,18 @@ async function finalizeRunningSession(
   sdk: BackendSDK,
   ref: SessionRef,
   running: RunningSession,
-  state: EngineState,
-  phase: EnginePhase,
-  terminalError?: ApiError,
+  lifecycle: TerminalSessionLifecycle,
 ): Promise<void> {
   try {
     await drainEvents(running);
-    const finalError = running.eventError ?? terminalError;
-    await persistTerminalWithRetry(
-      sdk,
-      ref,
-      running,
-      running.eventError ? EngineState.Error : state,
-      phase,
-      finalError,
-    );
+    const finalLifecycle: TerminalSessionLifecycle = running.eventError
+      ? {
+          state: EngineState.Error,
+          phase: lifecycle.phase,
+          error: running.eventError,
+        }
+      : lifecycle;
+    await persistTerminalWithRetry(sdk, ref, running, finalLifecycle);
     deleteRunningSession(ref, running);
   } catch (cause) {
     running.finalizing = false;
@@ -496,14 +497,12 @@ async function persistTerminalWithRetry(
   sdk: BackendSDK,
   ref: SessionRef,
   running: RunningSession,
-  state: EngineState,
-  phase: EnginePhase,
-  terminalError?: ApiError,
+  lifecycle: TerminalSessionLifecycle,
 ): Promise<void> {
   let lastError: unknown;
   for (let attempt = 0; attempt < TERMINAL_PERSIST_ATTEMPTS; attempt += 1) {
     try {
-      await persistTerminal(sdk, ref, state, phase, running, terminalError);
+      await persistTerminal(sdk, ref, running, lifecycle);
       return;
     } catch (cause) {
       lastError = cause;
@@ -521,14 +520,11 @@ async function finalizeStartupFailure(
 ): Promise<void> {
   if (!beginFinalization(running)) return;
   try {
-    await finalizeRunningSession(
-      sdk,
-      ref,
-      running,
-      EngineState.Error,
-      running.phase,
-      { code: "INTERNAL", message: getErrorMessage(cause) },
-    );
+    await finalizeRunningSession(sdk, ref, running, {
+      state: EngineState.Error,
+      phase: running.phase,
+      error: { code: "INTERNAL", message: getErrorMessage(cause) },
+    });
   } catch (finalizeCause) {
     sdk.console.error(
       `[SESSIONS] Could not finalize failed startup ${ref.sessionId}: ${getErrorMessage(finalizeCause)}`,
@@ -570,10 +566,35 @@ async function drainEvents(running: RunningSession): Promise<void> {
   await running.eventChain;
 }
 
-function getActiveStateForPhase(phase: EnginePhase): EngineState {
-  if (phase === EnginePhase.Learning) return EngineState.Learning;
-  if (phase === EnginePhase.Discovery) return EngineState.Running;
-  return EngineState.Pending;
+function getActiveLifecycleForPhase(
+  phase: EnginePhase,
+): NonTerminalSessionLifecycle {
+  if (phase === EnginePhase.Learning) {
+    return { state: EngineState.Learning, phase };
+  }
+  if (phase === EnginePhase.Discovery) {
+    return { state: EngineState.Running, phase };
+  }
+  return { state: EngineState.Pending, phase };
+}
+
+function toTerminalSessionLifecycle(
+  summary: Awaited<ReturnType<typeof runDiscoveryScan>>["summary"],
+): TerminalSessionLifecycle {
+  switch (summary.state) {
+    case EngineState.Completed:
+      return { state: summary.state, phase: summary.phase };
+    case EngineState.Canceled:
+      return { state: summary.state, phase: summary.phase };
+    case EngineState.Timeout:
+      return { state: summary.state, phase: summary.phase };
+    case EngineState.Error:
+      return {
+        state: summary.state,
+        phase: summary.phase,
+        error: { code: "INTERNAL", message: summary.failureReason },
+      };
+  }
 }
 
 function rollbackPause(session: RunningSession): void {
@@ -583,8 +604,6 @@ function rollbackPause(session: RunningSession): void {
   ) {
     session.runControl.resume();
   }
-
-  session.stateBeforePause = undefined;
 }
 
 function toSentRequest(
