@@ -18,9 +18,16 @@ const {
   sessions,
   contextMenu,
   menuItems,
+  draggedSessionId,
+  dropTarget,
   select,
   remove,
   onContextMenu,
+  onDragStart,
+  onDragOver,
+  onDragLeave,
+  onDrop,
+  onDragEnd,
   statusLabel,
   statusTitle,
   statusDotClasses,
@@ -30,18 +37,37 @@ const {
 <template>
   <Card v-if="sessions.length > 0" class="shrink-0" :pt="plainCardPt">
     <template #content>
-      <div class="flex items-center gap-2 p-2 flex-wrap">
+      <div
+        class="flex items-center gap-2 p-2 flex-wrap"
+        @dragover="onDragOver"
+        @dragleave="onDragLeave"
+        @drop="onDrop"
+      >
         <div
           v-for="session in sessions"
           :key="session.ref.sessionId"
-          class="group flex items-center gap-3 cursor-pointer px-3 py-1.5 rounded text-sm transition-all border bg-surface-900"
-          :class="
+          :data-session-tab-id="session.ref.sessionId"
+          draggable="true"
+          class="group flex items-center gap-3 cursor-grab select-none px-3 py-1.5 rounded text-sm transition-all border bg-surface-900 active:cursor-grabbing"
+          :class="[
             activeSessionId === session.ref.sessionId
               ? 'border-secondary-400 text-surface-0'
-              : 'border-surface-700 text-surface-200 hover:border-surface-600'
-          "
+              : 'border-surface-700 text-surface-200 hover:border-surface-600',
+            draggedSessionId === session.ref.sessionId ? 'opacity-30' : '',
+            dropTarget?.sessionId === session.ref.sessionId &&
+            dropTarget.kind === 'before'
+              ? '!border-l-2 !border-l-secondary-400'
+              : '',
+            dropTarget?.sessionId === session.ref.sessionId &&
+            dropTarget.kind === 'after'
+              ? '!border-r-2 !border-r-secondary-400'
+              : '',
+          ]"
+          :aria-grabbed="draggedSessionId === session.ref.sessionId"
           @click="select(session.ref.sessionId)"
           @contextmenu="onContextMenu($event, session.ref.sessionId)"
+          @dragstart="onDragStart($event, session.ref.sessionId)"
+          @dragend="onDragEnd"
         >
           <SessionErrorPopover
             v-if="session.error !== undefined"

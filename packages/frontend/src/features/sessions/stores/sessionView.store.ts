@@ -3,6 +3,7 @@ import type { RequestResponse } from "shared";
 import { ref } from "vue";
 
 export type SessionRequestsTab = "requests" | "findings";
+export type SessionTabPlacement = "before" | "after";
 
 export type RequestDetailState =
   | { status: "loading" }
@@ -15,6 +16,7 @@ export const useSessionViewStore = defineStore("session-view", () => {
   const selectedFindingKey = ref<string>();
   const requestsTab = ref<SessionRequestsTab>("findings");
   const requestDetails = ref<Record<string, RequestDetailState>>({});
+  const sessionTabOrder = ref<string[]>([]);
 
   const clearRequestDetails = () => {
     requestDetails.value = {};
@@ -25,6 +27,32 @@ export const useSessionViewStore = defineStore("session-view", () => {
     selectedRequestId.value = undefined;
     selectedFindingKey.value = undefined;
     clearRequestDetails();
+  };
+
+  const moveSessionTab = (
+    sessionIds: string[],
+    sourceId: string,
+    targetId: string,
+    placement: SessionTabPlacement,
+  ) => {
+    if (sourceId === targetId || !sessionIds.includes(sourceId)) {
+      return;
+    }
+
+    const nextOrder = sessionIds.filter((id) => id !== sourceId);
+    const targetIndex = nextOrder.indexOf(targetId);
+    if (targetIndex === -1) {
+      return;
+    }
+
+    const insertionIndex =
+      placement === "after" ? targetIndex + 1 : targetIndex;
+    nextOrder.splice(insertionIndex, 0, sourceId);
+    sessionTabOrder.value = nextOrder;
+  };
+
+  const resetSessionTabOrder = () => {
+    sessionTabOrder.value = [];
   };
 
   const setSelectedRequest = (id: string | undefined) => {
@@ -72,8 +100,11 @@ export const useSessionViewStore = defineStore("session-view", () => {
     selectedFindingKey,
     requestsTab,
     requestDetails,
+    sessionTabOrder,
     clearRequestDetails,
     setActiveSession,
+    moveSessionTab,
+    resetSessionTabOrder,
     setSelectedRequest,
     setSelectedFinding,
     setRequestsTab,

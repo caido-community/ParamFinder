@@ -44,4 +44,14 @@ describe("session view store", () => {
       error: "failed",
     });
   });
+
+  it("moves session tabs before and after drop targets", () => {
+    const store = useSessionViewStore();
+
+    store.moveSessionTab(["a", "b", "c"], "a", "c", "after");
+    expect(store.sessionTabOrder).toEqual(["b", "c", "a"]);
+
+    store.moveSessionTab(store.sessionTabOrder, "a", "b", "before");
+    expect(store.sessionTabOrder).toEqual(["a", "b", "c"]);
+  });
 });

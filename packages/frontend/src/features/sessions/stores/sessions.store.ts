@@ -83,7 +83,8 @@ function entryValues(
 export const useSessionsStore = defineStore("sessions", () => {
   const sdk = useSDK();
   const viewStore = useSessionViewStore();
-  const { activeSessionId, selectedRequestId } = storeToRefs(viewStore);
+  const { activeSessionId, selectedRequestId, sessionTabOrder } =
+    storeToRefs(viewStore);
   const model = ref<SessionsModel>({
     ...initialModel,
     sessions: {},
@@ -108,13 +109,26 @@ export const useSessionsStore = defineStore("sessions", () => {
   let reloadQueued = false;
   let projectLoadIntent = 0;
 
-  const list = computed(() =>
-    Object.values(sessions.value).sort(
+  const list = computed(() => {
+    const chronological = Object.values(sessions.value).sort(
       (left, right) =>
         left.createdAt - right.createdAt ||
         compareSessionIds(left.ref.sessionId, right.ref.sessionId),
-    ),
-  );
+    );
+    if (sessionTabOrder.value.length === 0) {
+      return chronological;
+    }
+
+    const byId = new Map(
+      chronological.map((session) => [session.ref.sessionId, session]),
+    );
+    const ordered = sessionTabOrder.value.flatMap((id) => {
+      const session = byId.get(id);
+      byId.delete(id);
+      return session === undefined ? [] : [session];
+    });
+    return [...ordered, ...byId.values()];
+  });
 
   const activeDescriptor = computed(() =>
     activeSessionId.value === undefined
@@ -166,7 +180,7 @@ export const useSessionsStore = defineStore("sessions", () => {
     );
     dispatch({ type: "REMOVE_DESCRIPTORS", refs });
     if (activeRemoved) {
-      const nextId = Object.values(sessions.value)[0]?.ref.sessionId;
+      const nextId = list.value[0]?.ref.sessionId;
       setActiveSession(nextId);
     }
   };
@@ -212,7 +226,7 @@ export const useSessionsStore = defineStore("sessions", () => {
     }
     dispatch({ type: "APPLY_ENVELOPE", envelope });
     if (activeDeleted) {
-      const nextId = Object.values(sessions.value)[0]?.ref.sessionId;
+      const nextId = list.value[0]?.ref.sessionId;
       setActiveSession(nextId);
     } else if (newDescriptor !== undefined) {
       setActiveSession(newDescriptor.ref.sessionId, { loadEntries: false });
@@ -256,6 +270,7 @@ export const useSessionsStore = defineStore("sessions", () => {
     dispatch({ type: "PROJECT_LOAD_STARTED", projectId });
     viewStore.clearRequestDetails();
     if (projectChanged) {
+      viewStore.resetSessionTabOrder();
       viewStore.setActiveSession(undefined);
     }
     const token = generation.value;

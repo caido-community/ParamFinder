@@ -194,6 +194,27 @@ describe("sessions store reliability", () => {
     ]);
   });
 
+  it("keeps a reordered tab list and appends new sessions", async () => {
+    const first = { ...descriptor("a", "first"), createdAt: 1 };
+    const second = { ...descriptor("a", "second"), createdAt: 2 };
+    const third = { ...descriptor("a", "third"), createdAt: 3 };
+    sdkHolder.current = createSDK({
+      listSessions: vi.fn(async () => ok(snapshot("a", 1, [first, second]))),
+    });
+    const store = useSessionsStore();
+    const viewStore = useSessionViewStore();
+    await store.initialize();
+
+    viewStore.moveSessionTab(["first", "second"], "second", "first", "before");
+    store.acceptEnvelope(upsertEnvelope("a", 2, third));
+
+    expect(store.list.map((session) => session.ref.sessionId)).toEqual([
+      "second",
+      "first",
+      "third",
+    ]);
+  });
+
   it("reuses entry caches when switching between sessions", async () => {
     const first = descriptor("a", "first");
     const second = descriptor("a", "second");
