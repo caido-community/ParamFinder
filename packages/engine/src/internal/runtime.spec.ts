@@ -8,7 +8,7 @@ import type {
   EngineResponse,
 } from "../types";
 
-import { createEngineRuntimeContext } from "./runtime";
+import { createEngineRuntime } from "./runtime";
 
 const challengeTitle = "<title>Just a moment...</title>";
 
@@ -40,6 +40,7 @@ function createResponse(
       status: 200,
       headers: {},
       body: "ok",
+      length: 0,
       time: 1,
       ...overrides,
     },
@@ -51,7 +52,7 @@ describe("Cloudflare challenge handling", () => {
     const request = createRequest();
     const sleep = vi.fn(async () => undefined);
     let sends = 0;
-    const runtime = createEngineRuntimeContext({
+    const runtime = createEngineRuntime({
       sleep,
       provider: {
         async send() {
@@ -66,7 +67,7 @@ describe("Cloudflare challenge handling", () => {
       },
     });
 
-    const result = await runtime.sendRequest(request, { delayMs: 10 });
+    const result = await runtime.requests.sendRequest(request, { delayMs: 10 });
 
     expect(result.response.status).toBe(200);
     expect(sends).toBe(3);
@@ -80,7 +81,7 @@ describe("Cloudflare challenge handling", () => {
   ])("requires both the 403 status and challenge title", async (response) => {
     const request = createRequest();
     let sends = 0;
-    const runtime = createEngineRuntimeContext({
+    const runtime = createEngineRuntime({
       provider: {
         async send() {
           sends += 1;
@@ -89,7 +90,7 @@ describe("Cloudflare challenge handling", () => {
       },
     });
 
-    await expect(runtime.sendRequest(request)).resolves.toBeDefined();
+    await expect(runtime.requests.sendRequest(request)).resolves.toBeDefined();
     expect(sends).toBe(1);
     runtime.dispose();
   });
@@ -99,7 +100,7 @@ describe("Cloudflare challenge handling", () => {
     const runControl = new RunControl();
     const events: DiscoveryEvent[] = [];
     let sends = 0;
-    const runtime = createEngineRuntimeContext({
+    const runtime = createEngineRuntime({
       provider: {
         async send() {
           sends += 1;
@@ -113,7 +114,7 @@ describe("Cloudflare challenge handling", () => {
       },
     });
 
-    const resultPromise = runtime.sendRequest(request, {
+    const resultPromise = runtime.requests.sendRequest(request, {
       runControl,
       onEvent: (event) => events.push(event),
     });
@@ -150,7 +151,7 @@ describe("Cloudflare challenge handling", () => {
   it("stops after two retries when the run cannot be paused", async () => {
     const request = createRequest();
     let sends = 0;
-    const runtime = createEngineRuntimeContext({
+    const runtime = createEngineRuntime({
       provider: {
         async send() {
           sends += 1;
@@ -162,7 +163,7 @@ describe("Cloudflare challenge handling", () => {
       },
     });
 
-    await expect(runtime.sendRequest(request)).rejects.toMatchObject({
+    await expect(runtime.requests.sendRequest(request)).rejects.toMatchObject({
       code: "PROVIDER_ERROR",
       message:
         "Cloudflare WAF detected after 2 retries. Run stopped because pausing is unavailable.",
@@ -176,7 +177,7 @@ describe("request pacing and rate limiting", () => {
   it("paces consecutive provider requests centrally", async () => {
     const request = createRequest();
     const sleep = vi.fn(async () => undefined);
-    const runtime = createEngineRuntimeContext({
+    const runtime = createEngineRuntime({
       sleep,
       provider: {
         async send() {
@@ -185,8 +186,8 @@ describe("request pacing and rate limiting", () => {
       },
     });
 
-    await runtime.sendRequest(request, { delayMs: 25 });
-    await runtime.sendRequest(request, { delayMs: 25 });
+    await runtime.requests.sendRequest(request, { delayMs: 25 });
+    await runtime.requests.sendRequest(request, { delayMs: 25 });
 
     expect(sleep).toHaveBeenCalledTimes(1);
     expect(sleep).toHaveBeenCalledWith(25, expect.any(AbortSignal));
@@ -196,7 +197,7 @@ describe("request pacing and rate limiting", () => {
   it("fails immediately on a 429 when pausing is unavailable", async () => {
     const request = createRequest();
     let sends = 0;
-    const runtime = createEngineRuntimeContext({
+    const runtime = createEngineRuntime({
       provider: {
         async send() {
           sends += 1;
@@ -205,7 +206,7 @@ describe("request pacing and rate limiting", () => {
       },
     });
 
-    await expect(runtime.sendRequest(request)).rejects.toMatchObject({
+    await expect(runtime.requests.sendRequest(request)).rejects.toMatchObject({
       code: "PROVIDER_ERROR",
       message:
         "Rate limited with HTTP 429. Run stopped because pausing is unavailable.",
@@ -219,7 +220,7 @@ describe("request pacing and rate limiting", () => {
     const runControl = new RunControl();
     const events: DiscoveryEvent[] = [];
     let sends = 0;
-    const runtime = createEngineRuntimeContext({
+    const runtime = createEngineRuntime({
       provider: {
         async send() {
           sends += 1;
@@ -228,7 +229,7 @@ describe("request pacing and rate limiting", () => {
       },
     });
 
-    const resultPromise = runtime.sendRequest(request, {
+    const resultPromise = runtime.requests.sendRequest(request, {
       runControl,
       onEvent: (event) => events.push(event),
     });

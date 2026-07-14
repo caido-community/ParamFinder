@@ -36,7 +36,7 @@ export class CaidoRequestProvider implements RequestProvider {
         requestId,
         status: sent.response.getCode(),
         headers: createHeaderMap(sent.response.getHeaders()),
-        body: body?.toText(),
+        body: body?.toText() ?? "",
         length: body?.length ?? 0,
         time: sent.response.getRoundtripTime(),
       },

@@ -59,6 +59,7 @@ function createProvider(): RequestProvider {
           status: 200,
           headers: {},
           body,
+          length: 0,
           time: 10,
           raw: `HTTP/1.1 200 OK\r\n\r\n${body}`,
         },
@@ -80,6 +81,8 @@ function createConfig(overrides?: Partial<EngineConfig>): EngineConfig {
     additionalChecks: false,
     ignoreAnomalyTypes: [],
     ...overrides,
+    autopilotEnabled: overrides?.autopilotEnabled ?? false,
+    customValueType: overrides?.customValueType ?? "string",
   };
 }
 
@@ -91,6 +94,7 @@ function createFinding(parameter = "secret"): Finding {
       status: 200,
       headers: {},
       body: "interesting response",
+      length: 0,
       time: 10,
       raw: "HTTP/1.1 200 OK\r\n\r\ninteresting response",
     },
@@ -353,6 +357,7 @@ function createCompletedProfile(): BaselineProfile {
         status: 200,
         headers: {},
         body: "baseline response",
+        length: 0,
         time: 10,
         raw: "HTTP/1.1 200 OK\r\n\r\nbaseline response",
       },

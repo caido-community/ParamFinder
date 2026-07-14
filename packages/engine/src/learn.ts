@@ -1,4 +1,5 @@
 import { EngineError } from "./errors";
+import { getReflectionVariations } from "./internal/reflections";
 import type {
   AdditionalChecksResult,
   AttackType,
@@ -69,8 +70,8 @@ export function deriveBaselineProfile(
     throw new EngineError("INTERNAL_ERROR", "Learning samples were missing");
   }
 
-  const initialBody = initialRequestResponse.response.body ?? "";
-  const secondBody = secondSample.requestResponse.response.body ?? "";
+  const initialBody = initialRequestResponse.response.body;
+  const secondBody = secondSample.requestResponse.response.body;
   const bodyDiffReferenceCount = countLineDifferences(
     sampleBody(initialBody),
     sampleBody(secondBody),
@@ -277,8 +278,8 @@ function checkStableFactors(
 ): StableFactors {
   const initialResponse = initialRequestResponse.response;
   const nextResponse = nextRequestResponse.response;
-  const initialBody = initialResponse.body ?? "";
-  const nextBody = nextResponse.body ?? "";
+  const initialBody = initialResponse.body;
+  const nextBody = nextResponse.body;
   const initialLocation = getFirstHeaderValue(
     initialResponse.headers,
     "Location",
@@ -340,27 +341,4 @@ function getReflectionsCount(body: string, parameters: Parameter[]): number {
   }
 
   return maxCount;
-}
-
-function getReflectionVariations(value: string): string[] {
-  const variations = new Set<string>([value]);
-  const encoded = encodeURIComponent(value);
-
-  if (encoded !== value) {
-    variations.add(encoded);
-  }
-
-  if (value.includes("<") || value.includes(">")) {
-    variations.add(value.replace(/</g, "&lt;").replace(/>/g, "&gt;"));
-  }
-
-  if (value.includes('"')) {
-    variations.add(value.replace(/"/g, "&quot;"));
-  }
-
-  if (value.includes("'")) {
-    variations.add(value.replace(/'/g, "&#39;"));
-  }
-
-  return Array.from(variations);
 }

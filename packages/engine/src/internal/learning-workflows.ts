@@ -20,7 +20,7 @@ import type {
 } from "../types";
 import { AnomalyType, EnginePhase, EngineState } from "../types";
 
-import type { EngineRuntimeContext } from "./runtime";
+import type { EngineRuntime } from "./runtime";
 import {
   type AutopilotResult,
   createAdditionalCheckParameterValue,
@@ -28,13 +28,15 @@ import {
   getWafPatterns,
 } from "./shared";
 
-export function createLearningWorkflows(runtimeContext: EngineRuntimeContext) {
+export function createLearningWorkflows(
+  runtime: Pick<EngineRuntime, "events" | "random" | "requests" | "run">,
+) {
   const performLearning = async (
     parsed: EngineLearnInput,
   ): Promise<EngineLearnResult> => {
     const samples: LearningSample[] = [];
 
-    runtimeContext.emit(parsed.runOptions, {
+    runtime.events.emit(parsed.runOptions, {
       type: "state",
       state: EngineState.Learning,
       phase: EnginePhase.Learning,
@@ -45,14 +47,14 @@ export function createLearningWorkflows(runtimeContext: EngineRuntimeContext) {
       index < parsed.engineConfig.learnRequestsCount;
       index += 1
     ) {
-      await runtimeContext.waitForCheckpoint(parsed.runOptions);
+      await runtime.run.waitForCheckpoint(parsed.runOptions);
 
       const parameters = generateLearningParameters(
         index + 1,
-        runtimeContext.runtime.random,
+        runtime.random,
         parsed.engineConfig.customValueType,
       );
-      const requestResponse = await runtimeContext.sendMutatedRequest({
+      const requestResponse = await runtime.requests.sendMutatedRequest({
         baseRequest: parsed.request,
         parameters,
         attackType: parsed.engineConfig.attackType,
@@ -60,7 +62,7 @@ export function createLearningWorkflows(runtimeContext: EngineRuntimeContext) {
         engineConfig: parsed.engineConfig,
         runOptions: parsed.runOptions,
       });
-      runtimeContext.detectAndEmitRequest(
+      runtime.events.detectAndEmitRequest(
         parsed.runOptions,
         requestResponse,
         0,
@@ -72,9 +74,9 @@ export function createLearningWorkflows(runtimeContext: EngineRuntimeContext) {
       });
 
       if (index < parsed.engineConfig.learnRequestsCount - 1) {
-        await runtimeContext.sleepIfNeeded(
+        await runtime.run.sleepIfNeeded(
           parsed.runOptions,
-          Math.floor(runtimeContext.runtime.random() * 300) + 200,
+          Math.floor(runtime.random() * 300) + 200,
         );
       }
     }
@@ -84,7 +86,7 @@ export function createLearningWorkflows(runtimeContext: EngineRuntimeContext) {
     profile.bodyKind = inspection.bodyKind;
     profile.multipartBoundary = inspection.multipartBoundary;
 
-    runtimeContext.emit(parsed.runOptions, {
+    runtime.events.emit(parsed.runOptions, {
       type: "learnedProfile",
       profile,
     });
@@ -105,12 +107,9 @@ export function createLearningWorkflows(runtimeContext: EngineRuntimeContext) {
     );
 
     for (const size of probeConfig.sizes) {
-      await runtimeContext.waitForCheckpoint(runOptions);
-      const parameters = probeConfig.createParameters(
-        runtimeContext.runtime.random,
-        size,
-      );
-      const requestResponse = await runtimeContext.sendMutatedRequest({
+      await runtime.run.waitForCheckpoint(runOptions);
+      const parameters = probeConfig.createParameters(runtime.random, size);
+      const requestResponse = await runtime.requests.sendMutatedRequest({
         baseRequest: request,
         parameters,
         attackType: engineConfig.attackType,
@@ -119,7 +118,7 @@ export function createLearningWorkflows(runtimeContext: EngineRuntimeContext) {
         runOptions,
       });
 
-      runtimeContext.detectAndEmitRequest(
+      runtime.events.detectAndEmitRequest(
         runOptions,
         requestResponse,
         0,
@@ -136,7 +135,7 @@ export function createLearningWorkflows(runtimeContext: EngineRuntimeContext) {
         }
       }
 
-      await runtimeContext.sleepIfNeeded(runOptions);
+      await runtime.run.sleepIfNeeded(runOptions);
     }
 
     return probeConfig.defaultSize;
@@ -164,7 +163,7 @@ export function createLearningWorkflows(runtimeContext: EngineRuntimeContext) {
       };
     }
 
-    runtimeContext.emit(args.runOptions, {
+    runtime.events.emit(args.runOptions, {
       type: "log",
       level: "info",
       message: "Received 414: URI Too Long, adjusting max URL size.",
@@ -181,7 +180,7 @@ export function createLearningWorkflows(runtimeContext: EngineRuntimeContext) {
       args.currentMaxSize !== undefined &&
       guessedMaxSize >= args.currentMaxSize
     ) {
-      runtimeContext.emit(args.runOptions, {
+      runtime.events.emit(args.runOptions, {
         type: "log",
         level: "info",
         message:
@@ -197,7 +196,7 @@ export function createLearningWorkflows(runtimeContext: EngineRuntimeContext) {
       };
     }
 
-    runtimeContext.emit(args.runOptions, {
+    runtime.events.emit(args.runOptions, {
       type: "log",
       level: "info",
       message: `Adjusting max URL size to ${guessedMaxSize}${args.currentMaxSize !== undefined ? ` (old: ${args.currentMaxSize})` : ""}`,
@@ -224,7 +223,7 @@ export function createLearningWorkflows(runtimeContext: EngineRuntimeContext) {
 
     const parameterValue = createAdditionalCheckParameterValue(engineConfig);
     const rawParameters = [{ name: "paramFinder[]", value: parameterValue }];
-    const rawResponse = await runtimeContext.sendMutatedRequest({
+    const rawResponse = await runtime.requests.sendMutatedRequest({
       baseRequest: request,
       parameters: rawParameters,
       attackType: engineConfig.attackType,
@@ -233,7 +232,7 @@ export function createLearningWorkflows(runtimeContext: EngineRuntimeContext) {
       runOptions,
     });
 
-    runtimeContext.detectAndEmitRequest(
+    runtime.events.detectAndEmitRequest(
       runOptions,
       rawResponse,
       0,
@@ -254,7 +253,7 @@ export function createLearningWorkflows(runtimeContext: EngineRuntimeContext) {
     const encodedParameters = [
       { name: "paramFinder%5B%5D", value: parameterValue },
     ];
-    const encodedResponse = await runtimeContext.sendMutatedRequest({
+    const encodedResponse = await runtime.requests.sendMutatedRequest({
       baseRequest: request,
       parameters: encodedParameters,
       attackType: engineConfig.attackType,
@@ -263,7 +262,7 @@ export function createLearningWorkflows(runtimeContext: EngineRuntimeContext) {
       runOptions,
     });
 
-    runtimeContext.detectAndEmitRequest(
+    runtime.events.detectAndEmitRequest(
       runOptions,
       encodedResponse,
       0,
@@ -298,7 +297,7 @@ export function createLearningWorkflows(runtimeContext: EngineRuntimeContext) {
     const anomalousResponses: EngineResponse[] = [];
 
     for (const pattern of getWafPatterns()) {
-      await runtimeContext.waitForCheckpoint(runOptions);
+      await runtime.run.waitForCheckpoint(runOptions);
       const parameters = createWafParameters(pattern, engineConfig);
       const parameterSetKey = createParameterSetKey(parameters);
       if (seenParameterSets.has(parameterSetKey)) {
@@ -306,7 +305,7 @@ export function createLearningWorkflows(runtimeContext: EngineRuntimeContext) {
       }
       seenParameterSets.add(parameterSetKey);
 
-      const requestResponse = await runtimeContext.sendMutatedRequest({
+      const requestResponse = await runtime.requests.sendMutatedRequest({
         baseRequest: request,
         parameters,
         attackType: engineConfig.attackType,
@@ -316,7 +315,7 @@ export function createLearningWorkflows(runtimeContext: EngineRuntimeContext) {
         allowCloudflareChallenge: true,
       });
 
-      runtimeContext.detectAndEmitRequest(
+      runtime.events.detectAndEmitRequest(
         runOptions,
         requestResponse,
         0,
@@ -334,7 +333,7 @@ export function createLearningWorkflows(runtimeContext: EngineRuntimeContext) {
           matchesWafResponse(response, requestResponse.response),
         )
       ) {
-        runtimeContext.setKnownWafResponse(requestResponse.response);
+        runtime.requests.setKnownWafResponse(requestResponse.response);
         return requestResponse.response;
       }
       if (
@@ -344,7 +343,7 @@ export function createLearningWorkflows(runtimeContext: EngineRuntimeContext) {
         anomalousResponses.push(requestResponse.response);
       }
 
-      await runtimeContext.sleepIfNeeded(runOptions);
+      await runtime.run.sleepIfNeeded(runOptions);
     }
 
     return undefined;

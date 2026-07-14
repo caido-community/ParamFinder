@@ -24,7 +24,7 @@ import { AnomalyType, EnginePhase, EngineState } from "../types";
 import { sanitizeWords } from "../utils";
 
 import { createBaselineHealthMonitor } from "./baseline-health";
-import type { EngineRuntimeContext } from "./runtime";
+import type { EngineRuntime } from "./runtime";
 import { type AutopilotResult, getConfiguredMaxSize } from "./shared";
 import { createParameterChunkVerifier } from "./verified-finding";
 
@@ -44,11 +44,11 @@ interface DiscoveryWorkflowDependencies {
 }
 
 export function createDiscoveryWorkflows(
-  runtimeContext: EngineRuntimeContext,
+  runtime: Pick<EngineRuntime, "events" | "random" | "requests" | "run">,
   dependencies: DiscoveryWorkflowDependencies,
 ) {
-  const parameterChunkVerifier = createParameterChunkVerifier(runtimeContext);
-  const baselineHealthMonitor = createBaselineHealthMonitor(runtimeContext);
+  const parameterChunkVerifier = createParameterChunkVerifier(runtime);
+  const baselineHealthMonitor = createBaselineHealthMonitor(runtime);
 
   const verifySingleParameter = async (args: {
     request: EngineRequest;
@@ -59,8 +59,8 @@ export function createDiscoveryWorkflows(
     runOptions?: RunOptions;
     ignoredAnomalyTypes?: readonly AnomalyType[];
   }): Promise<Finding | undefined> => {
-    await runtimeContext.waitForCheckpoint(args.runOptions);
-    runtimeContext.emit(args.runOptions, {
+    await runtime.run.waitForCheckpoint(args.runOptions);
+    runtime.events.emit(args.runOptions, {
       type: "log",
       level: "info",
       message: `Verifying candidate parameter "${args.parameter.name}": ${describeAnomalyReason(args.anomaly)} (${describeAnomaly(args.anomaly)})`,
@@ -83,12 +83,12 @@ export function createDiscoveryWorkflows(
       parameter: args.parameter,
       anomaly: verified.anomaly,
     };
-    runtimeContext.emit(args.runOptions, {
+    runtime.events.emit(args.runOptions, {
       type: "log",
       level: "info",
       message: `Confirmed parameter "${args.parameter.name}": ${describeAnomalyReason(verified.anomaly)} (${describeAnomaly(verified.anomaly)})`,
     });
-    runtimeContext.emit(args.runOptions, {
+    runtime.events.emit(args.runOptions, {
       type: "finding",
       finding,
     });
@@ -108,13 +108,13 @@ export function createDiscoveryWorkflows(
     const stack: Parameter[][] = [args.chunk];
 
     while (stack.length > 0) {
-      await runtimeContext.waitForCheckpoint(args.runOptions);
+      await runtime.run.waitForCheckpoint(args.runOptions);
       const currentChunk = stack.pop();
       if (!currentChunk || currentChunk.length === 0) {
         continue;
       }
 
-      const requestResponse = await runtimeContext.sendMutatedRequest({
+      const requestResponse = await runtime.requests.sendMutatedRequest({
         baseRequest: args.request,
         parameters: currentChunk,
         attackType: args.engineConfig.attackType,
@@ -123,7 +123,7 @@ export function createDiscoveryWorkflows(
         runOptions: args.runOptions,
       });
 
-      runtimeContext.detectAndEmitRequest(
+      runtime.events.detectAndEmitRequest(
         args.runOptions,
         requestResponse,
         0,
@@ -138,7 +138,7 @@ export function createDiscoveryWorkflows(
       );
 
       if (!anomaly) {
-        await runtimeContext.sleepIfNeeded(args.runOptions);
+        await runtime.run.sleepIfNeeded(args.runOptions);
         continue;
       }
 
@@ -163,7 +163,7 @@ export function createDiscoveryWorkflows(
         stack.push(secondHalf, firstHalf);
       }
 
-      await runtimeContext.sleepIfNeeded(args.runOptions);
+      await runtime.run.sleepIfNeeded(args.runOptions);
     }
 
     return findings;
@@ -172,7 +172,7 @@ export function createDiscoveryWorkflows(
   const performDiscovery = async (
     parsed: EngineDiscoverInput,
   ): Promise<EngineDiscoverResult> => {
-    runtimeContext.setKnownWafResponse(parsed.profile.wafResponse);
+    runtime.requests.setKnownWafResponse(parsed.profile.wafResponse);
     const sanitizedWords = sanitizeWords(parsed.words);
     const findings: Finding[] = [];
     let maxSize =
@@ -184,14 +184,14 @@ export function createDiscoveryWorkflows(
     let calibrationAttempts = 0;
     let consecutiveRejectedAnomalies = 0;
 
-    runtimeContext.emit(parsed.runOptions, {
+    runtime.events.emit(parsed.runOptions, {
       type: "state",
       state: EngineState.Running,
       phase: EnginePhase.Discovery,
     });
 
     while (nextIndex < sanitizedWords.length) {
-      await runtimeContext.waitForCheckpoint(parsed.runOptions);
+      await runtime.run.waitForCheckpoint(parsed.runOptions);
       const chunkStartIndex = nextIndex;
       const chunk = getNextChunk({
         words: sanitizedWords,
@@ -203,7 +203,7 @@ export function createDiscoveryWorkflows(
         customValue: parsed.engineConfig.customValue,
         customValueType: parsed.engineConfig.customValueType,
         jsonBodyPath: parsed.engineConfig.jsonBodyPath,
-        random: runtimeContext.runtime.random,
+        random: runtime.random,
       });
 
       if (chunk.parameters.length === 0) {
@@ -228,7 +228,7 @@ export function createDiscoveryWorkflows(
         }
       }
 
-      const requestResponse = await runtimeContext.sendMutatedRequest({
+      const requestResponse = await runtime.requests.sendMutatedRequest({
         baseRequest: parsed.request,
         parameters: chunk.parameters,
         attackType: parsed.engineConfig.attackType,
@@ -237,7 +237,7 @@ export function createDiscoveryWorkflows(
         runOptions: parsed.runOptions,
       });
 
-      runtimeContext.detectAndEmitRequest(
+      runtime.events.detectAndEmitRequest(
         parsed.runOptions,
         requestResponse,
         chunk.parameters.length,
@@ -256,7 +256,7 @@ export function createDiscoveryWorkflows(
       maxSize = autopilot.nextMaxSize;
       hasAdjustedQuerySize = autopilot.hasAdjustedQuerySize;
       if (autopilot.handled) {
-        await runtimeContext.sleepIfNeeded(parsed.runOptions);
+        await runtime.run.sleepIfNeeded(parsed.runOptions);
         continue;
       }
 
@@ -271,7 +271,7 @@ export function createDiscoveryWorkflows(
       );
 
       if (anomaly) {
-        runtimeContext.emit(parsed.runOptions, {
+        runtime.events.emit(parsed.runOptions, {
           type: "log",
           level: "info",
           message: `${describeAnomalyReason(anomaly)} (${describeAnomaly(anomaly)}) after sending ${chunk.parameters.length} parameter${chunk.parameters.length === 1 ? "" : "s"}`,
@@ -320,7 +320,7 @@ export function createDiscoveryWorkflows(
             ];
 
             if (parametersToVerify.length === 0) {
-              await runtimeContext.sleepIfNeeded(parsed.runOptions);
+              await runtime.run.sleepIfNeeded(parsed.runOptions);
               continue;
             }
           }
@@ -337,7 +337,7 @@ export function createDiscoveryWorkflows(
 
         if (verified) {
           consecutiveRejectedAnomalies = 0;
-          runtimeContext.emit(parsed.runOptions, {
+          runtime.events.emit(parsed.runOptions, {
             type: "log",
             level: "info",
             message: `Narrowing down chunk of ${parametersToVerify.length} parameter${parametersToVerify.length === 1 ? "" : "s"}`,
@@ -367,7 +367,7 @@ export function createDiscoveryWorkflows(
         consecutiveRejectedAnomalies = 0;
       }
 
-      await runtimeContext.sleepIfNeeded(parsed.runOptions);
+      await runtime.run.sleepIfNeeded(parsed.runOptions);
     }
 
     return {

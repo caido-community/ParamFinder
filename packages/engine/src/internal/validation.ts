@@ -1,26 +1,23 @@
 import { z } from "zod";
 
-import { parseJsonBodyPath } from "../json-body-path";
 import { RunControl } from "../run-control";
 import {
   type Anomaly,
   AnomalyType,
-  ATTACK_TYPES,
   type BaselineProfile,
-  type EngineConfig,
   type EngineRequest,
   type EngineRequestResponse,
   type EngineResponse,
   INSPECTABLE_BODY_KINDS,
   type Parameter,
-  PARAMETER_VALUE_TYPES,
   REQUEST_CONTEXTS,
   type RunOptions,
   type StableFactors,
 } from "../types";
 
+export { anomalyTypeSchema, engineConfigSchema } from "../config-schema";
+
 export const headersSchema = z.record(z.string(), z.array(z.string()));
-export const anomalyTypeSchema = z.enum(AnomalyType);
 export const parameterSchema: z.ZodType<Parameter> = z.object({
   name: z.string(),
   value: z.string(),
@@ -86,9 +83,9 @@ export const engineResponseSchema: z.ZodType<EngineResponse> = z.object({
   requestId: z.string().min(1),
   status: z.number().int().nonnegative(),
   headers: headersSchema,
-  body: z.string().optional(),
+  body: z.string(),
   time: z.number().nonnegative(),
-  length: z.number().int().nonnegative().optional(),
+  length: z.number().int().nonnegative(),
   raw: z.string().min(1).optional(),
 });
 export const engineRequestResponseSchema: z.ZodType<EngineRequestResponse> =
@@ -128,63 +125,6 @@ export const baselineProfileSchema: z.ZodType<BaselineProfile> = z.object({
   bodyKind: z.enum(INSPECTABLE_BODY_KINDS).optional(),
   multipartBoundary: z.string().min(1).optional(),
 });
-
-export const engineConfigSchema: z.ZodType<EngineConfig> = z
-  .object({
-    attackType: z.enum(ATTACK_TYPES),
-    learnRequestsCount: z.number().int().min(3),
-    autoDetectMaxSize: z.boolean(),
-    maxQuerySize: z.number().int().positive().optional(),
-    maxHeaderSize: z.number().int().positive().optional(),
-    maxBodySize: z.number().int().positive().optional(),
-    updateContentLength: z.boolean(),
-    autopilotEnabled: z.boolean().optional(),
-    addCacheBusterParameter: z.boolean(),
-    wafDetection: z.boolean(),
-    ignoreCloudflareBlocks: z.boolean(),
-    additionalChecks: z.boolean(),
-    ignoreAnomalyTypes: z.array(anomalyTypeSchema),
-    customValue: z.string().min(1).optional(),
-    customValueType: z.enum(PARAMETER_VALUE_TYPES).optional(),
-    jsonBodyPath: z.string().min(1).optional(),
-    maxParametersAmount: z.number().int().positive().optional(),
-  })
-  .superRefine((value, ctx) => {
-    const hasExplicitMaxSize =
-      value.maxQuerySize !== undefined ||
-      value.maxHeaderSize !== undefined ||
-      value.maxBodySize !== undefined;
-
-    if (value.autoDetectMaxSize && hasExplicitMaxSize) {
-      ctx.addIssue({
-        code: "custom",
-        message:
-          "Cannot set explicit max size values when autoDetectMaxSize is enabled",
-      });
-    }
-
-    if (
-      value.customValueType === "integer" &&
-      value.customValue !== undefined
-    ) {
-      ctx.addIssue({
-        code: "custom",
-        message: "Cannot set customValue when customValueType is integer",
-      });
-    }
-
-    if (value.jsonBodyPath !== undefined) {
-      try {
-        parseJsonBodyPath(value.jsonBodyPath);
-      } catch {
-        ctx.addIssue({
-          code: "custom",
-          path: ["jsonBodyPath"],
-          message: "Invalid JSON body path",
-        });
-      }
-    }
-  });
 
 export const runOptionsSchema: z.ZodType<RunOptions> = z.object({
   delayMs: z.number().int().min(0).optional(),

@@ -9,7 +9,7 @@ import type {
   RunOptions,
 } from "../types";
 
-import type { EngineRuntimeContext } from "./runtime";
+import type { EngineRuntime } from "./runtime";
 import {
   anomaliesMatch,
   isStrongVerificationAnomaly,
@@ -32,7 +32,7 @@ export interface ParameterChunkVerifier {
 }
 
 export function createParameterChunkVerifier(
-  runtimeContext: EngineRuntimeContext,
+  runtime: Pick<EngineRuntime, "events" | "requests">,
 ): ParameterChunkVerifier {
   const verifyParameterChunk = async (
     input: VerifyParameterChunkInput,
@@ -41,7 +41,7 @@ export function createParameterChunkVerifier(
     const ignoredAnomalyTypes =
       input.ignoredAnomalyTypes ?? input.engineConfig.ignoreAnomalyTypes;
     const controlBeforeRequestResponse =
-      await runtimeContext.sendMutatedRequest({
+      await runtime.requests.sendMutatedRequest({
         baseRequest: input.request,
         parameters: [],
         attackType: input.engineConfig.attackType,
@@ -50,12 +50,12 @@ export function createParameterChunkVerifier(
         runOptions: input.runOptions,
       });
 
-    runtimeContext.detectAndEmitRequest(
+    runtime.events.detectAndEmitRequest(
       input.runOptions,
       controlBeforeRequestResponse,
       0,
     );
-    const requestResponse = await runtimeContext.sendMutatedRequest({
+    const requestResponse = await runtime.requests.sendMutatedRequest({
       baseRequest: input.request,
       parameters: input.parameters,
       attackType: input.engineConfig.attackType,
@@ -64,19 +64,18 @@ export function createParameterChunkVerifier(
       runOptions: input.runOptions,
     });
 
-    runtimeContext.detectAndEmitRequest(input.runOptions, requestResponse, 0);
-    const controlAfterRequestResponse = await runtimeContext.sendMutatedRequest(
-      {
+    runtime.events.detectAndEmitRequest(input.runOptions, requestResponse, 0);
+    const controlAfterRequestResponse =
+      await runtime.requests.sendMutatedRequest({
         baseRequest: input.request,
         parameters: [],
         attackType: input.engineConfig.attackType,
         context: "narrower",
         engineConfig: input.engineConfig,
         runOptions: input.runOptions,
-      },
-    );
+      });
 
-    runtimeContext.detectAndEmitRequest(
+    runtime.events.detectAndEmitRequest(
       input.runOptions,
       controlAfterRequestResponse,
       0,
@@ -169,7 +168,7 @@ export function createParameterChunkVerifier(
       };
     }
 
-    emitDiscardedVerificationLog(runtimeContext, input, {
+    emitDiscardedVerificationLog(runtime, input, {
       controlBeforeAnomaly,
       candidateVsBefore,
       candidateVsAfter,
@@ -185,7 +184,7 @@ export function createParameterChunkVerifier(
 }
 
 function emitDiscardedVerificationLog(
-  runtimeContext: EngineRuntimeContext,
+  runtime: Pick<EngineRuntime, "events">,
   input: VerifyParameterChunkInput,
   anomalies: {
     controlBeforeAnomaly?: ReturnType<typeof detectAnomaly>;
@@ -213,7 +212,7 @@ function emitDiscardedVerificationLog(
       : undefined,
   ].filter(Boolean);
 
-  runtimeContext.emit(input.runOptions, {
+  runtime.events.emit(input.runOptions, {
     type: "log",
     level: "debug",
     message: `Discarded anomaly because the control window did not confirm it${discardReasons.length > 0 ? ` (${discardReasons.join(", ")})` : "."}`,

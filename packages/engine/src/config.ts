@@ -14,6 +14,7 @@ import {
 import type {
   BaselineProfile,
   EngineConfig,
+  EngineConfigInput,
   EngineDiscoverInput,
   EngineLearnInput,
   EngineRequest,
@@ -70,7 +71,7 @@ export function parseEngineConfig(config: unknown): EngineConfig {
 }
 
 export function createEngineConfig(
-  overrides: Partial<EngineConfig> = {},
+  overrides: EngineConfigInput = {},
 ): EngineConfig {
   const attackType = overrides.attackType ?? "query";
 

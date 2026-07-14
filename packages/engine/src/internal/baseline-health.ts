@@ -12,7 +12,7 @@ import type {
 import { AnomalyType } from "../types";
 import { normalizeHeaderName, randomString } from "../utils";
 
-import type { EngineRuntimeContext } from "./runtime";
+import type { EngineRuntime } from "./runtime";
 import { anomaliesMatch } from "./shared";
 
 const CANARY_REQUESTS = 3;
@@ -33,7 +33,7 @@ interface BaselineCalibrationResult {
 }
 
 export function createBaselineHealthMonitor(
-  runtimeContext: EngineRuntimeContext,
+  runtime: Pick<EngineRuntime, "events" | "random" | "requests" | "run">,
 ) {
   const calibrate = async (
     input: BaselineCalibrationInput,
@@ -43,11 +43,7 @@ export function createBaselineHealthMonitor(
     let parameters = capParameters(input.parameters, maxParametersAmount);
 
     for (let round = 0; round < MAX_CALIBRATION_ROUNDS; round += 1) {
-      const canarySamples = await sendCanarySamples(
-        runtimeContext,
-        input,
-        parameters,
-      );
+      const canarySamples = await sendCanarySamples(runtime, input, parameters);
       const canaryAnomaly = findQuorumAnomaly(
         input.profile,
         canarySamples,
@@ -58,7 +54,7 @@ export function createBaselineHealthMonitor(
         return { changed, maxParametersAmount };
       }
 
-      const controlSamples = await sendControlSamples(runtimeContext, input);
+      const controlSamples = await sendControlSamples(runtime, input);
       const controlAnomaly = findQuorumAnomaly(
         input.profile,
         controlSamples,
@@ -68,12 +64,12 @@ export function createBaselineHealthMonitor(
       if (controlAnomaly !== undefined) {
         replaceProfile(input.profile, deriveBaselineProfile(canarySamples));
         changed = true;
-        runtimeContext.emit(input.runOptions, {
+        runtime.events.emit(input.runOptions, {
           type: "log",
           level: "warn",
           message: `Baseline drift detected during calibration (${describeAnomaly(controlAnomaly)}); refreshed the discovery profile.`,
         });
-        runtimeContext.emit(input.runOptions, {
+        runtime.events.emit(input.runOptions, {
           type: "learnedProfile",
           profile: input.profile,
         });
@@ -88,7 +84,7 @@ export function createBaselineHealthMonitor(
             : Math.min(maxParametersAmount, nextLimit);
         parameters = input.parameters.slice(0, maxParametersAmount);
         changed = true;
-        runtimeContext.emit(input.runOptions, {
+        runtime.events.emit(input.runOptions, {
           type: "log",
           level: "warn",
           message: `Random canary parameters reproduced ${describeAnomaly(canaryAnomaly)}; reducing discovery chunks to ${maxParametersAmount} parameter${maxParametersAmount === 1 ? "" : "s"}.`,
@@ -98,19 +94,19 @@ export function createBaselineHealthMonitor(
 
       disableUnstableFactor(input.profile, canaryAnomaly);
       changed = true;
-      runtimeContext.emit(input.runOptions, {
+      runtime.events.emit(input.runOptions, {
         type: "log",
         level: "warn",
         message: `Random one-parameter canaries reproduced ${describeAnomaly(canaryAnomaly)}; disabled that unstable signal for this scan.`,
       });
-      runtimeContext.emit(input.runOptions, {
+      runtime.events.emit(input.runOptions, {
         type: "learnedProfile",
         profile: input.profile,
       });
       return { changed, maxParametersAmount };
     }
 
-    runtimeContext.emit(input.runOptions, {
+    runtime.events.emit(input.runOptions, {
       type: "log",
       level: "warn",
       message:
@@ -123,7 +119,7 @@ export function createBaselineHealthMonitor(
 }
 
 async function sendCanarySamples(
-  runtimeContext: EngineRuntimeContext,
+  runtime: Pick<EngineRuntime, "events" | "random" | "requests" | "run">,
   input: BaselineCalibrationInput,
   parameters: Parameter[],
 ): Promise<LearningSample[]> {
@@ -131,11 +127,11 @@ async function sendCanarySamples(
   for (let index = 0; index < CANARY_REQUESTS; index += 1) {
     const canaryParameters = createMatchedCanaryParameters(
       parameters,
-      runtimeContext.runtime.random,
+      runtime.random,
       input.engineConfig.customValueType,
       index,
     );
-    const requestResponse = await runtimeContext.sendMutatedRequest({
+    const requestResponse = await runtime.requests.sendMutatedRequest({
       baseRequest: input.request,
       parameters: canaryParameters,
       attackType: input.engineConfig.attackType,
@@ -143,25 +139,25 @@ async function sendCanarySamples(
       engineConfig: input.engineConfig,
       runOptions: input.runOptions,
     });
-    runtimeContext.detectAndEmitRequest(
+    runtime.events.detectAndEmitRequest(
       input.runOptions,
       requestResponse,
       0,
       canaryParameters.length,
     );
     samples.push({ requestResponse, parameters: canaryParameters });
-    await runtimeContext.sleepIfNeeded(input.runOptions);
+    await runtime.run.sleepIfNeeded(input.runOptions);
   }
   return samples;
 }
 
 async function sendControlSamples(
-  runtimeContext: EngineRuntimeContext,
+  runtime: Pick<EngineRuntime, "events" | "requests" | "run">,
   input: BaselineCalibrationInput,
 ): Promise<LearningSample[]> {
   const samples: LearningSample[] = [];
   for (let index = 0; index < 2; index += 1) {
-    const requestResponse = await runtimeContext.sendMutatedRequest({
+    const requestResponse = await runtime.requests.sendMutatedRequest({
       baseRequest: input.request,
       parameters: [],
       attackType: input.engineConfig.attackType,
@@ -169,9 +165,9 @@ async function sendControlSamples(
       engineConfig: input.engineConfig,
       runOptions: input.runOptions,
     });
-    runtimeContext.detectAndEmitRequest(input.runOptions, requestResponse, 0);
+    runtime.events.detectAndEmitRequest(input.runOptions, requestResponse, 0);
     samples.push({ requestResponse, parameters: [] });
-    await runtimeContext.sleepIfNeeded(input.runOptions);
+    await runtime.run.sleepIfNeeded(input.runOptions);
   }
   return samples;
 }

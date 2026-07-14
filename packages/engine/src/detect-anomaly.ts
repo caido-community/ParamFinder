@@ -1,3 +1,4 @@
+import { getReflectionVariations } from "./internal/reflections";
 import type {
   Anomaly,
   BaselineProfile,
@@ -42,7 +43,7 @@ function referenceSimilarity(
   reference: EngineResponse,
   responseBody: string,
 ): number {
-  const referenceBody = reference.body ?? "";
+  const referenceBody = reference.body;
   if (referenceBody === responseBody) {
     return 1;
   }
@@ -65,13 +66,13 @@ function referenceLineDifferences(
   reference: EngineResponse,
   responseBody: string,
 ): number {
-  if ((reference.body ?? "") === responseBody) {
+  if (reference.body === responseBody) {
     return 0;
   }
 
   const index = getReferenceIndex(reference);
   if (index.lines === undefined) {
-    index.lines = splitLines(sampleBody(reference.body ?? ""));
+    index.lines = splitLines(sampleBody(reference.body));
   }
 
   return countLineDifferencesFromLeft(index.lines, sampleBody(responseBody));
@@ -103,8 +104,8 @@ export function matchesWafResponse(
   wafResponse: EngineResponse,
   response: EngineResponse,
 ): boolean {
-  const wafBody = wafResponse.body ?? "";
-  const responseBody = response.body ?? "";
+  const wafBody = wafResponse.body;
+  const responseBody = response.body;
   return (
     wafResponse.status === response.status &&
     (wafBody === responseBody ||
@@ -123,8 +124,7 @@ export function matchesCloudflareBlock(response: EngineResponse): boolean {
     return false;
   }
 
-  const haystack =
-    `${response.body ?? ""}\n${response.raw ?? ""}`.toLowerCase();
+  const haystack = `${response.body}\n${response.raw ?? ""}`.toLowerCase();
   return CLOUDFLARE_BLOCK_MARKERS.some((marker) => haystack.includes(marker));
 }
 
@@ -133,8 +133,8 @@ export function compareResponseToReference(
   options: CompareResponseToReferenceOptions,
 ): Anomaly | undefined {
   const stableFactors = profile.stableFactors;
-  const referenceBody = options.referenceResponse.body ?? "";
-  const responseBody = options.response.body ?? "";
+  const referenceBody = options.referenceResponse.body;
+  const responseBody = options.response.body;
   const ignoredAnomalyTypes = new Set(options.ignoredAnomalyTypes);
   const unstableHeaders = new Set(
     stableFactors.unstableHeaders.map(normalizeHeaderName),
@@ -316,8 +316,8 @@ export function detectReflectionCountAnomalies(
   }
 
   return getReflectionCountAnomalies({
-    referenceBody: profile.initialRequestResponse.response.body ?? "",
-    responseBody: response.body ?? "",
+    referenceBody: profile.initialRequestResponse.response.body,
+    responseBody: response.body,
     parameters,
     expectedReflectionsCount: profile.stableFactors.reflectionsCount,
   });
@@ -369,27 +369,4 @@ function getReflectionCount(body: string, value: string): number {
   }
 
   return maxCount;
-}
-
-function getReflectionVariations(value: string): string[] {
-  const variations = new Set<string>([value]);
-  const encoded = encodeURIComponent(value);
-
-  if (encoded !== value) {
-    variations.add(encoded);
-  }
-
-  if (value.includes("<") || value.includes(">")) {
-    variations.add(value.replace(/</g, "&lt;").replace(/>/g, "&gt;"));
-  }
-
-  if (value.includes('"')) {
-    variations.add(value.replace(/"/g, "&quot;"));
-  }
-
-  if (value.includes("'")) {
-    variations.add(value.replace(/'/g, "&#39;"));
-  }
-
-  return Array.from(variations);
 }

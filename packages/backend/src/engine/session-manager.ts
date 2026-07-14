@@ -597,7 +597,7 @@ function toSentRequest(
     requestId: event.requestResponse.request.id,
     responseStatus: event.requestResponse.response.status,
     responseTime: event.requestResponse.response.time,
-    responseLength: event.requestResponse.response.length ?? 0,
+    responseLength: event.requestResponse.response.length,
   };
 }
 
@@ -605,7 +605,7 @@ function toSessionFinding(finding: Finding): SessionFinding {
   return {
     requestId: finding.requestResponse.request.id,
     responseStatus: finding.requestResponse.response.status,
-    responseLength: finding.requestResponse.response.length ?? 0,
+    responseLength: finding.requestResponse.response.length,
     parameter: finding.parameter,
     anomaly: finding.anomaly,
   };

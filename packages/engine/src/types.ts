@@ -1,5 +1,8 @@
+import type { EngineConfig } from "./config-schema";
 import type { DiscoveryEvent } from "./events";
 import type { RunControl } from "./run-control";
+
+export type { EngineConfig, EngineConfigInput } from "./config-schema";
 
 export const ATTACK_TYPES = ["query", "body", "headers"] as const;
 export const REQUEST_CONTEXTS = ["discovery", "narrower", "learning"] as const;
@@ -44,9 +47,9 @@ export interface EngineResponse {
   requestId: string;
   status: number;
   headers: HeaderMap;
-  body?: string;
+  body: string;
   time: number;
-  length?: number;
+  length: number;
   raw?: string;
 }
 
@@ -184,26 +187,6 @@ export const EnginePhase = {
 } as const;
 
 export type EnginePhase = (typeof EnginePhase)[keyof typeof EnginePhase];
-
-export interface EngineConfig {
-  attackType: AttackType;
-  learnRequestsCount: number;
-  autoDetectMaxSize: boolean;
-  maxQuerySize?: number;
-  maxHeaderSize?: number;
-  maxBodySize?: number;
-  updateContentLength: boolean;
-  autopilotEnabled?: boolean;
-  addCacheBusterParameter: boolean;
-  wafDetection: boolean;
-  ignoreCloudflareBlocks: boolean;
-  additionalChecks: boolean;
-  ignoreAnomalyTypes: AnomalyType[];
-  customValue?: string;
-  customValueType?: ParameterValueType;
-  jsonBodyPath?: string;
-  maxParametersAmount?: number;
-}
 
 export type LoggerLevel = "debug" | "info" | "warn" | "error";
 export type LoggerFn = (level: LoggerLevel, message: string) => void;

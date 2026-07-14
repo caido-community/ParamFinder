@@ -1,3 +1,4 @@
+import { engineConfigSchema } from "@paramfinder/engine";
 import { z } from "zod";
 
 import { apiErrorSchema } from "./api";
@@ -8,7 +9,6 @@ import {
   enginePhaseSchema,
   engineStateSchema,
   parameterSchema,
-  parameterValueTypeSchema,
   requestContextSchema,
   requestSchema,
 } from "./primitives";
@@ -36,24 +36,7 @@ export type Settings = z.infer<typeof settingsSchema>;
 export const settingsChangesSchema = settingsSchema.partial().strict();
 export type SettingsChanges = z.infer<typeof settingsChangesSchema>;
 
-export const paramMinerConfigSchema = z.object({
-  attackType: attackTypeSchema,
-  learnRequestsCount: z.number().int().min(3),
-  autoDetectMaxSize: z.boolean(),
-  maxQuerySize: z.number().int().positive().optional(),
-  maxHeaderSize: z.number().int().positive().optional(),
-  maxBodySize: z.number().int().positive().optional(),
-  updateContentLength: z.boolean(),
-  autopilotEnabled: z.boolean().optional(),
-  addCacheBusterParameter: z.boolean(),
-  wafDetection: z.boolean(),
-  ignoreCloudflareBlocks: z.boolean().optional(),
-  additionalChecks: z.boolean(),
-  ignoreAnomalyTypes: z.array(anomalyTypeSchema),
-  customValue: z.string().min(1).optional(),
-  customValueType: parameterValueTypeSchema.optional(),
-  jsonBodyPath: z.string().min(1).optional(),
-  maxParametersAmount: z.number().int().positive().optional(),
+export const paramMinerConfigSchema = engineConfigSchema.safeExtend({
   delayBetweenRequests: z.number().int().nonnegative(),
   requestTimeoutSeconds: z.number().positive().optional(),
   scanTimeoutSeconds: z.number().positive().optional(),

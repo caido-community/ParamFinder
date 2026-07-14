@@ -44,8 +44,9 @@ function createConfig(overrides?: Partial<EngineConfig>): EngineConfig {
     ignoreCloudflareBlocks: false,
     additionalChecks: true,
     ignoreAnomalyTypes: [],
-    customValueType: "string",
     ...overrides,
+    autopilotEnabled: overrides?.autopilotEnabled ?? false,
+    customValueType: overrides?.customValueType ?? "string",
   };
 }
 
@@ -58,6 +59,7 @@ function createProfile(): BaselineProfile {
         status: 200,
         headers: {},
         body: "{}",
+        length: 0,
         time: 12,
         raw: "HTTP/1.1 200 OK\r\n\r\n{}",
       },

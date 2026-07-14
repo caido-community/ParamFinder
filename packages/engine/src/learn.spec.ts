@@ -38,6 +38,7 @@ function createRequestResponse(
         status: 200,
         headers,
         body,
+        length: 0,
         time: 10,
         raw: `HTTP/1.1 200 OK\r\n\r\n${body}`,
       },

@@ -2,23 +2,17 @@ import { matchesWafResponse } from "../detect-anomaly";
 import { EngineError } from "../errors";
 import type { DiscoveryEvent } from "../events";
 import { mutateRequest } from "../mutate-request";
-import {
-  defaultSleep,
-  type EngineDependencies,
-  type RequestProvider,
-} from "../provider";
+import { defaultSleep, type EngineDependencies } from "../provider";
 import type {
   AttackType,
   EngineConfig,
   EngineRequest,
   EngineRequestResponse,
   EngineResponse,
-  LoggerFn,
   Parameter,
   RandomSource,
   RequestContext,
   RunOptions,
-  SleepFn,
 } from "../types";
 import { EnginePhase, EngineState } from "../types";
 import { emitLog } from "../utils";
@@ -49,20 +43,25 @@ interface PauseForInterventionOptions {
   stateFirst: boolean;
 }
 
-export interface EngineRuntimeContext {
-  runtime: {
-    provider: RequestProvider;
-    sleep: SleepFn;
-    now: () => number;
-    random: RandomSource;
-    logger?: LoggerFn;
-  };
+export interface EngineEventService {
   emit: (runOptions: EventSink, event: DiscoveryEvent) => void;
+  detectAndEmitRequest: (
+    runOptions: EventSink,
+    requestResponse: EngineRequestResponse,
+    parametersSent: number,
+    parametersTested?: number,
+  ) => void;
+}
+
+export interface EngineRunService {
   waitForCheckpoint: (runOptions?: RunOptions) => Promise<void>;
   sleepIfNeeded: (
     runOptions?: RunOptions,
     extraDelayMs?: number,
   ) => Promise<void>;
+}
+
+export interface EngineRequestService {
   sendRequest: (
     request: EngineRequest,
     runOptions?: RunOptions,
@@ -70,13 +69,14 @@ export interface EngineRuntimeContext {
   sendMutatedRequest: (
     args: SendMutatedRequestArgs,
   ) => Promise<EngineRequestResponse>;
-  detectAndEmitRequest: (
-    runOptions: EventSink,
-    requestResponse: EngineRequestResponse,
-    parametersSent: number,
-    parametersTested?: number,
-  ) => void;
   setKnownWafResponse: (response?: EngineResponse) => void;
+}
+
+export interface EngineRuntime {
+  events: EngineEventService;
+  run: EngineRunService;
+  requests: EngineRequestService;
+  random: RandomSource;
   dispose: () => void;
 }
 
@@ -84,10 +84,10 @@ export interface EngineRuntimeLimits {
   timeoutMs?: number;
 }
 
-export function createEngineRuntimeContext(
+export function createEngineRuntime(
   dependencies: EngineDependencies,
   limits: EngineRuntimeLimits = {},
-): EngineRuntimeContext {
+): EngineRuntime {
   const runtime = {
     provider: dependencies.provider,
     sleep: dependencies.sleep ?? defaultSleep,
@@ -450,14 +450,10 @@ export function createEngineRuntimeContext(
   };
 
   return {
-    runtime,
-    emit,
-    waitForCheckpoint,
-    sleepIfNeeded,
-    sendRequest,
-    sendMutatedRequest,
-    detectAndEmitRequest,
-    setKnownWafResponse,
+    events: { emit, detectAndEmitRequest },
+    run: { waitForCheckpoint, sleepIfNeeded },
+    requests: { sendRequest, sendMutatedRequest, setKnownWafResponse },
+    random: runtime.random,
     dispose,
   };
 }
@@ -530,7 +526,7 @@ function isCloudflareChallenge(
   const { response } = requestResponse;
   return (
     response.status === 403 &&
-    (response.body?.includes(CLOUDFLARE_CHALLENGE_TITLE) === true ||
+    (response.body.includes(CLOUDFLARE_CHALLENGE_TITLE) ||
       response.raw?.includes(CLOUDFLARE_CHALLENGE_TITLE) === true)
   );
 }

@@ -3,10 +3,7 @@ import { toEngineError } from "./errors";
 import type { DiscoveryEvent } from "./events";
 import { createDiscoveryWorkflows } from "./internal/discovery-workflows";
 import { createLearningWorkflows } from "./internal/learning-workflows";
-import {
-  createEngineRuntimeContext,
-  type EngineRuntimeContext,
-} from "./internal/runtime";
+import { createEngineRuntime, type EngineRuntime } from "./internal/runtime";
 import {
   createCanceledRunResult,
   createCompletedRunResult,
@@ -32,14 +29,14 @@ import { sanitizeWords } from "./utils";
 
 export function createDiscoveryEngine(dependencies: EngineDependencies) {
   const createExecution = (timeoutMs?: number) => {
-    const runtimeContext = createEngineRuntimeContext(dependencies, {
+    const runtime = createEngineRuntime(dependencies, {
       timeoutMs,
     });
-    const learningWorkflows = createLearningWorkflows(runtimeContext);
-    const discoveryWorkflows = createDiscoveryWorkflows(runtimeContext, {
+    const learningWorkflows = createLearningWorkflows(runtime);
+    const discoveryWorkflows = createDiscoveryWorkflows(runtime, {
       handleAutopilotResponse: learningWorkflows.handleAutopilotResponse,
     });
-    return { runtimeContext, learningWorkflows, discoveryWorkflows };
+    return { runtime, learningWorkflows, discoveryWorkflows };
   };
 
   const learn = async (input: EngineLearnInput) => {
@@ -48,7 +45,7 @@ export function createDiscoveryEngine(dependencies: EngineDependencies) {
     try {
       return await execution.learningWorkflows.performLearning(parsed);
     } finally {
-      execution.runtimeContext.dispose();
+      execution.runtime.dispose();
     }
   };
 
@@ -58,14 +55,15 @@ export function createDiscoveryEngine(dependencies: EngineDependencies) {
     try {
       return await execution.discoveryWorkflows.performDiscovery(parsed);
     } finally {
-      execution.runtimeContext.dispose();
+      execution.runtime.dispose();
     }
   };
 
   const run = async (input: EngineRunInput): Promise<EngineRunResult> => {
     const parsed = parseRunInput(input);
-    const { runtimeContext, learningWorkflows, discoveryWorkflows } =
-      createExecution(parsed.runOptions?.timeoutMs);
+    const { runtime, learningWorkflows, discoveryWorkflows } = createExecution(
+      parsed.runOptions?.timeoutMs,
+    );
     const initialWords = sanitizeWords(parsed.words);
     let phase: EnginePhase = EnginePhase.Learning;
     let profile: BaselineProfile | undefined;
@@ -119,12 +117,12 @@ export function createDiscoveryEngine(dependencies: EngineDependencies) {
       words = sanitizeWords([
         ...words,
         ...extractWordsFromResponseBody(
-          profile.initialRequestResponse.response.body ?? "",
+          profile.initialRequestResponse.response.body,
         ),
       ]);
       totalParametersAmount = words.length;
 
-      runtimeContext.emit(parsed.runOptions, {
+      runtime.events.emit(parsed.runOptions, {
         type: "adjustTotalParameters",
         totalParametersAmount,
       });
@@ -148,7 +146,7 @@ export function createDiscoveryEngine(dependencies: EngineDependencies) {
       });
 
       return finalizeRun(
-        runtimeContext,
+        runtime,
         parsed.runOptions,
         createCompletedRunResult({
           findings: discoveryResult.findings,
@@ -163,7 +161,7 @@ export function createDiscoveryEngine(dependencies: EngineDependencies) {
       const engineError = toEngineError(error);
       if (engineError.code === "RUN_ABORTED") {
         return finalizeRun(
-          runtimeContext,
+          runtime,
           parsed.runOptions,
           createCanceledRunResult({
             phase,
@@ -176,7 +174,7 @@ export function createDiscoveryEngine(dependencies: EngineDependencies) {
 
       if (engineError.code === "RUN_TIMEOUT") {
         return finalizeRun(
-          runtimeContext,
+          runtime,
           parsed.runOptions,
           createTimeoutRunResult({
             phase,
@@ -189,13 +187,13 @@ export function createDiscoveryEngine(dependencies: EngineDependencies) {
 
       if (engineError.code === "PROVIDER_ERROR") {
         const failureReason = describeProviderFailure(engineError);
-        runtimeContext.emit(parsed.runOptions, {
+        runtime.events.emit(parsed.runOptions, {
           type: "log",
           level: "error",
           message: failureReason,
         });
         return finalizeRun(
-          runtimeContext,
+          runtime,
           parsed.runOptions,
           createErrorRunResult({
             phase,
@@ -207,14 +205,14 @@ export function createDiscoveryEngine(dependencies: EngineDependencies) {
         );
       }
 
-      runtimeContext.emit(parsed.runOptions, {
+      runtime.events.emit(parsed.runOptions, {
         type: "state",
         state: EngineState.Error,
         phase,
       });
       throw engineError;
     } finally {
-      runtimeContext.dispose();
+      runtime.dispose();
     }
   };
 
@@ -226,17 +224,17 @@ export function createDiscoveryEngine(dependencies: EngineDependencies) {
 }
 
 function finalizeRun(
-  runtimeContext: EngineRuntimeContext,
+  runtime: EngineRuntime,
   runOptions: RunOptions | undefined,
   result: EngineRunResult,
 ): EngineRunResult {
-  runtimeContext.emit(runOptions, {
+  runtime.events.emit(runOptions, {
     type: "state",
     state: result.state,
     phase: result.phase,
   });
 
   const { profile: _profile, ...summary } = result;
-  runtimeContext.emit(runOptions, { type: "completed", ...summary });
+  runtime.events.emit(runOptions, { type: "completed", ...summary });
   return result;
 }

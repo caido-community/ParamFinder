@@ -7,12 +7,12 @@ export {
   parseLearnInput,
   parseRunInput,
 } from "./config";
+export { engineConfigSchema } from "./config-schema";
 export {
   additionalChecksResultSchema,
   anomalySchema,
   anomalyTypeSchema,
   baselineProfileSchema,
-  engineConfigSchema,
   engineRequestSchema,
   engineRequestResponseSchema,
   engineResponseSchema,
@@ -84,6 +84,7 @@ export type {
   EngineCompletedRunResult,
   EngineCompletedRunSummary,
   EngineConfig,
+  EngineConfigInput,
   EngineDiscoverInput,
   EngineDiscoverResult,
   EngineFailedRunResult,
