@@ -11,7 +11,7 @@ export default defineConfig({
   id,
   name: "ParamFinder",
   description: "Discover hidden parameters.",
-  version: "2.0.1-beta.1",
+  version: "2.0.1",
   author: {
     name: "bebiks",
     email: "lukasz@caido.io",
