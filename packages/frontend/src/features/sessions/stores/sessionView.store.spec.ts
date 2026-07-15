@@ -19,7 +19,6 @@ describe("session view store", () => {
     expect(store.activeSessionId).toBe("session");
     expect(store.selectedRequestId).toBe("other-request");
     expect(store.selectedFindingKey).toBeUndefined();
-    expect(store.requestDetails).toEqual({});
   });
 
   it("moves session tabs before and after drop targets", () => {

@@ -44,7 +44,6 @@ export interface EngineRequest {
 }
 
 export interface EngineResponse {
-  requestId: string;
   status: number;
   headers: HeaderMap;
   body: string;
@@ -142,17 +141,13 @@ export interface AdditionalChecksResult {
 
 export interface StableFactors {
   bodyStable: boolean;
-  bodyLength: number;
   bodyLengthStable: boolean;
-  headersStable: boolean;
   statusCodeStable: boolean;
   reflectionStable: boolean;
   similarityStable: boolean;
   redirectStable: boolean;
   reflectionsCount: number;
-  statusCode: number;
   unstableHeaders: string[];
-  similarity: number;
   redirect?: string;
 }
 

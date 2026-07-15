@@ -7,7 +7,6 @@ import {
 import { describe, expect, it } from "vitest";
 
 import {
-  getProgressLabel,
   getSessionCapabilities,
   getSessionStateMeta,
   getSessionStateTitle,
@@ -32,7 +31,6 @@ function createSession(
     findingsCount: 0,
     logsCount: 0,
     createdAt: 1,
-    updatedAt: 1,
     ...overrides,
     ...lifecycle,
   };
@@ -49,8 +47,6 @@ describe("session stats", () => {
       requestsSent: 2,
       parametersTested: 14,
       remaining: 0,
-      progressCurrent: 10,
-      progressTotal: 10,
       progress: 100,
     });
   });
@@ -65,8 +61,8 @@ describe("session stats", () => {
     );
     const stats = getSessionStats(session);
 
-    expect(stats).toMatchObject({ progressCurrent: 1, progressTotal: 3 });
-    expect(getProgressLabel(session, stats)).toBe("1 / 3 learn requests");
+    expect(stats).toMatchObject({ remaining: 2 });
+    expect(stats?.progress).toBeCloseTo(100 / 3);
   });
 
   it("maps states and capabilities", () => {

@@ -3,10 +3,8 @@ import type { CursorPage, SessionEntry, SessionEntrySort } from "shared";
 export type SessionEntryCache = {
   entries: SessionEntry[];
   nextCursor?: string;
-  total: number;
   snapshotMaxSequence: number;
   loading: boolean;
-  error?: string;
   sort?: SessionEntrySort;
   filter?: string;
   stale: boolean;
@@ -21,7 +19,6 @@ export function createEntryCache(
 ): SessionEntryCache {
   return {
     entries: [],
-    total: 0,
     snapshotMaxSequence: 0,
     loading: false,
     sort,
@@ -59,10 +56,8 @@ export function appendPage(
     ...cache,
     entries,
     nextCursor: page.nextCursor,
-    total: Math.max(cache.total, page.total),
     snapshotMaxSequence: newestSequence,
     loading: false,
-    error: undefined,
     stale: cache.stale && newestSequence > page.snapshotMaxSequence,
     knownEntries,
     pendingEntries,
@@ -90,40 +85,13 @@ export function replacePage(
     ...cache,
     entries,
     nextCursor: page.nextCursor,
-    total: liveSequence ? Math.max(page.total, cache.total) : page.total,
     snapshotMaxSequence,
     loading: false,
-    error: undefined,
     stale: false,
     knownEntries: Object.fromEntries(
       entries.map((entry) => [entryKey(entry), true]),
     ),
     pendingEntries: {},
-  };
-}
-
-export function appendEntry(
-  cache: SessionEntryCache,
-  entry: SessionEntry,
-): SessionEntryCache {
-  const key = entryKey(entry);
-  if (cache.knownEntries[key] === true || cache.pendingEntries[key] === true)
-    return cache;
-  if (!isLiveSequenceCache(cache)) {
-    return {
-      ...cache,
-      total: cache.total + 1,
-      snapshotMaxSequence: Math.max(cache.snapshotMaxSequence, entry.sequence),
-      stale: true,
-      pendingEntries: { ...cache.pendingEntries, [key]: true },
-    };
-  }
-  return {
-    ...cache,
-    entries: [...cache.entries, entry],
-    total: cache.total + 1,
-    snapshotMaxSequence: Math.max(cache.snapshotMaxSequence, entry.sequence),
-    knownEntries: { ...cache.knownEntries, [key]: true },
   };
 }
 
@@ -151,7 +119,6 @@ export function appendEntries(
     for (const entry of additions) pendingEntries[entryKey(entry)] = true;
     return {
       ...cache,
-      total: cache.total + additions.length,
       snapshotMaxSequence: additions.reduce(
         (maximum, current) => Math.max(maximum, current.sequence),
         cache.snapshotMaxSequence,
@@ -165,7 +132,6 @@ export function appendEntries(
   return {
     ...cache,
     entries: [...cache.entries, ...additions],
-    total: cache.total + additions.length,
     snapshotMaxSequence: additions.reduce(
       (maximum, current) => Math.max(maximum, current.sequence),
       cache.snapshotMaxSequence,

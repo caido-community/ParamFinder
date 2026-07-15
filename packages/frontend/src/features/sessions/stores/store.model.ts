@@ -9,7 +9,7 @@ import type {
 
 import type { SessionEntryCache } from "./sessionEntryCache";
 
-export type SessionAction = "pause" | "resume" | "cancel" | "delete" | "rerun";
+export type SessionAction = "pause" | "resume" | "cancel" | "rerun";
 
 export type SessionView = SessionDescriptor & {
   id: string;

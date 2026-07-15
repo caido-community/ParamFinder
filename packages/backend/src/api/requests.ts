@@ -11,21 +11,25 @@ import {
   requestIdSchema,
 } from "shared";
 
-import { type BackendSDK } from "../types/types";
+import type { BackendSDK } from "../types";
 
-export async function getRequest(
-  sdk: BackendSDK,
-  id: string,
-): Promise<ApiResult<Request>> {
-  const input = requestIdSchema.safeParse(id);
-  if (!input.success) return error("Invalid request ID.", "VALIDATION");
+export function createRequestHandlers() {
+  const getRequest = async (
+    sdk: BackendSDK,
+    id: string,
+  ): Promise<ApiResult<Request>> => {
+    const input = requestIdSchema.safeParse(id);
+    if (!input.success) return error("Invalid request ID.", "VALIDATION");
 
-  const requestResponse = await sdk.requests.get(input.data);
-  if (!requestResponse) {
-    return error("Request not found", "NOT_FOUND");
-  }
+    const requestResponse = await sdk.requests.get(input.data);
+    if (!requestResponse) {
+      return error("Request not found.", "NOT_FOUND");
+    }
 
-  return ok(toRequest(requestResponse.request));
+    return ok(toRequest(requestResponse.request));
+  };
+
+  return { getRequest };
 }
 
 function toRequest(request: CaidoRequest): Request {

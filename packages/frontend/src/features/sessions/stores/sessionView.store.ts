@@ -99,7 +99,6 @@ export const useSessionViewStore = defineStore("session-view", () => {
     selectedRequestId,
     selectedFindingKey,
     requestsTab,
-    requestDetails,
     sessionTabOrder,
     clearRequestDetails,
     setActiveSession,

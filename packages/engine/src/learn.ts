@@ -100,12 +100,10 @@ export function deriveBaselineProfile(
         stableFactors.statusCodeStable && nextFactors.statusCodeStable,
       reflectionStable:
         stableFactors.reflectionStable && nextFactors.reflectionStable,
-      headersStable: stableFactors.headersStable && nextFactors.headersStable,
       similarityStable:
         stableFactors.similarityStable && nextFactors.similarityStable,
       redirectStable:
         stableFactors.redirectStable && nextFactors.redirectStable,
-      similarity: Math.min(stableFactors.similarity, nextFactors.similarity),
       unstableHeaders: Array.from(
         new Set([
           ...stableFactors.unstableHeaders,
@@ -313,17 +311,13 @@ function checkStableFactors(
 
   return {
     bodyStable: diffCount === bodyDiffReferenceCount,
-    bodyLength: initialBody.length,
     bodyLengthStable: nextBody.length === initialBody.length,
-    headersStable: true,
     statusCodeStable: nextResponse.status === initialResponse.status,
     reflectionStable: true,
     similarityStable: similarity > 0.98,
     redirectStable: initialLocation === location,
     reflectionsCount,
-    statusCode: nextResponse.status,
     unstableHeaders: Array.from(unstableHeaders),
-    similarity,
     redirect: location,
   };
 }

@@ -1,47 +1,41 @@
 import { defineStore } from "pinia";
-import { error, ok, type Settings } from "shared";
-import { computed, readonly, ref } from "vue";
-
-import { loadSettings, saveSettings } from "./store.effects";
-import {
-  initialModel,
-  type SettingsMessage,
-  type SettingsModel,
-} from "./store.model";
-import { update as updateModel } from "./store.update";
+import { type ApiResult, error, ok, type Settings } from "shared";
+import { ref } from "vue";
 
 import { useSDK } from "@/plugins/sdk";
+import { toErrorMessage } from "@/shared/utils/backend";
 
 export const useSettingsStore = defineStore("settings", () => {
   const sdk = useSDK();
-  const model = ref<SettingsModel>(initialModel);
+  const data = ref<Settings>();
+  const saving = ref(false);
   let pendingUpdate:
     | {
         changes: Partial<Settings>;
-        result: ReturnType<typeof saveSettings>;
+        result: Promise<ApiResult<Settings>>;
       }
     | undefined;
 
-  const dispatch = (message: SettingsMessage) => {
-    model.value = updateModel(model.value, message);
+  const initialize = async (): Promise<ApiResult<void>> => {
+    try {
+      const result = await sdk.backend.getSettings();
+      if (!result.success) return result;
+
+      data.value = result.value;
+      return ok(undefined);
+    } catch (cause: unknown) {
+      return error(toErrorMessage(cause));
+    }
   };
 
-  const data = computed(() => model.value.data);
-  const path = computed(() => model.value.path);
-  const loading = computed(() => model.value.loading);
-  const saving = computed(() => model.value.saving);
-  const storeError = computed(() => model.value.error);
-
-  const initialize = () => loadSettings(sdk, dispatch);
-
   const update = (changes: Partial<Settings>) => {
-    if (model.value.data === undefined) {
+    if (data.value === undefined) {
       return Promise.resolve(error("Settings are not loaded yet.", "CONFLICT"));
     }
 
-    const changedSettings = getChangedSettings(model.value.data, changes);
+    const changedSettings = getChangedSettings(data.value, changes);
     if (Object.keys(changedSettings).length === 0) {
-      return Promise.resolve(ok(model.value.data));
+      return Promise.resolve(ok(data.value));
     }
 
     if (pendingUpdate !== undefined) {
@@ -53,19 +47,30 @@ export const useSettingsStore = defineStore("settings", () => {
       );
     }
 
-    const result = saveSettings(sdk, dispatch, changedSettings).finally(() => {
+    const result = save(changedSettings).finally(() => {
       pendingUpdate = undefined;
     });
     pendingUpdate = { changes: changedSettings, result };
     return result;
   };
 
+  const save = async (
+    changes: Partial<Settings>,
+  ): Promise<ApiResult<Settings>> => {
+    saving.value = true;
+    try {
+      const result = await sdk.backend.patchSettings(changes);
+      if (result.success) data.value = result.value;
+      return result;
+    } catch (cause: unknown) {
+      return error(toErrorMessage(cause));
+    } finally {
+      saving.value = false;
+    }
+  };
+
   return {
-    state: readonly(model),
     data,
-    path,
-    error: storeError,
-    loading,
     saving,
     initialize,
     update,

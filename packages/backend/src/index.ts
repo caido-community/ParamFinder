@@ -1,96 +1,122 @@
-import { type ApiResult, error } from "shared";
-
 import {
-  cancelSession,
-  pauseSession,
-  resumeSession,
-  startMining,
-} from "./api/mining";
-import { getRequest } from "./api/requests";
+  createMiningHandlers,
+  createRequestHandlers,
+  createSessionHandlers,
+  createSettingsHandlers,
+  createWordlistHandlers,
+  mapApiErrors,
+} from "./api";
 import {
-  deleteSessions,
-  getCurrentProjectId,
-  getSessionEntries,
-  listSessions,
-} from "./api/sessions";
-import { getSettings, getSettingsPath, patchSettings } from "./api/settings";
+  initializeSessionDatabase,
+  SessionsRepository,
+  SettingsRepository,
+  WordlistsRepository,
+} from "./repositories";
 import {
-  clearWordlists,
-  deleteWordlist,
-  getWordlists,
-  importWordlist,
-  setWordlistAttackTypes,
-  setWordlistEnabled,
-} from "./api/wordlists";
-import { pauseSessionsOutsideProject } from "./engine/session-manager";
-import { initSessionStore } from "./sessions/session-store";
-import { initSettingsStore } from "./settings/settings";
-import type { BackendSDK } from "./types/types";
-import { getErrorMessage } from "./util/errors";
-import { initWordlistManager } from "./wordlists/wordlists";
+  MiningService,
+  SessionsService,
+  SettingsService,
+  WordlistsService,
+} from "./services";
+import { RunningSessionsStore } from "./stores";
+import type { BackendSDK } from "./types";
 
 export type { API, Events, Spec } from "shared";
 
-export function init(sdk: BackendSDK) {
-  const database = sdk.meta.db();
-  const sessions = initSessionStore(sdk, database);
-  initWordlistManager(
-    sdk,
-    sessions.ready.then(() => database),
-  );
-  initSettingsStore(sdk);
+export async function init(sdk: BackendSDK): Promise<void> {
+  const database = await sdk.meta.db();
+  const pluginDirectory = sdk.meta.path();
 
-  sdk.events.onProjectChange(async (eventSdk, project) => {
-    const result = await pauseSessionsOutsideProject(
-      eventSdk,
-      project?.getId(),
-    );
+  await initializeSessionDatabase(database);
+
+  const sessionsRepository = new SessionsRepository(database);
+  const settingsRepository = new SettingsRepository(pluginDirectory);
+  const wordlistsRepository = new WordlistsRepository(
+    database,
+    pluginDirectory,
+  );
+
+  const sessions = new SessionsService(sessionsRepository);
+  const settings = new SettingsService(settingsRepository);
+  const wordlists = new WordlistsService(wordlistsRepository);
+
+  await settings.initialize();
+  await wordlists.initialize();
+
+  const activeProject = await sdk.projects.getCurrent();
+  const runningSessions = new RunningSessionsStore();
+  const mining = new MiningService(
+    sdk,
+    sessions,
+    wordlists,
+    runningSessions,
+    activeProject?.getId(),
+  );
+
+  sdk.events.onProjectChange(async (sdk, project) => {
+    const currentProject = await sdk.projects.getCurrent();
+    const projectId = project?.getId();
+
+    if (currentProject?.getId() !== projectId) {
+      return;
+    }
+
+    const result = await mining.pauseOutsideProject(projectId);
     if (!result.success) {
-      eventSdk.console.error(
+      sdk.console.error(
         `[SESSIONS] Could not pause sessions after project change: ${result.error.message}`,
       );
     }
   });
 
-  const guard =
-    <Arguments extends unknown[], Value>(
-      handler: (
-        handlerSdk: BackendSDK,
-        ...args: Arguments
-      ) => Promise<ApiResult<Value>>,
-    ) =>
-    async (
-      handlerSdk: BackendSDK,
-      ...args: Arguments
-    ): Promise<ApiResult<Value>> => {
-      try {
-        return await handler(handlerSdk, ...args);
-      } catch (cause) {
-        const message = getErrorMessage(cause);
-        sdk.console.error(`[API] ${message}`);
+  const miningHandlers = createMiningHandlers(mining);
+  const requestHandlers = createRequestHandlers();
+  const sessionHandlers = createSessionHandlers(sessions, mining);
+  const settingsHandlers = createSettingsHandlers(settings);
+  const wordlistHandlers = createWordlistHandlers(wordlists);
 
-        return error(`ParamFinder backend operation failed: ${message}`, "IO");
-      }
-    };
-
-  sdk.api.register("startMining", guard(startMining));
-  sdk.api.register("cancelSession", guard(cancelSession));
-  sdk.api.register("pauseSession", guard(pauseSession));
-  sdk.api.register("resumeSession", guard(resumeSession));
-  sdk.api.register("deleteSessions", guard(deleteSessions));
-  sdk.api.register("listSessions", guard(listSessions));
-  sdk.api.register("getSessionEntries", guard(getSessionEntries));
-  sdk.api.register("getCurrentProjectId", guard(getCurrentProjectId));
-  sdk.api.register("getRequest", guard(getRequest));
-  sdk.api.register("getWordlists", guard(getWordlists));
-  sdk.api.register("clearWordlists", guard(clearWordlists));
-  sdk.api.register("importWordlist", guard(importWordlist));
-  sdk.api.register("deleteWordlist", guard(deleteWordlist));
-  sdk.api.register("setWordlistEnabled", guard(setWordlistEnabled));
-  sdk.api.register("setWordlistAttackTypes", guard(setWordlistAttackTypes));
-  sdk.api.register("getSettings", guard(getSettings));
-  sdk.api.register("patchSettings", guard(patchSettings));
-  sdk.api.register("getSettingsPath", guard(getSettingsPath));
-
-  sdk.console.log("Backend plugin initialized");
+  sdk.api.register("startMining", mapApiErrors(miningHandlers.startMining));
+  sdk.api.register("cancelSession", mapApiErrors(miningHandlers.cancelSession));
+  sdk.api.register("pauseSession", mapApiErrors(miningHandlers.pauseSession));
+  sdk.api.register("resumeSession", mapApiErrors(miningHandlers.resumeSession));
+  sdk.api.register(
+    "deleteSessions",
+    mapApiErrors(sessionHandlers.deleteSessions),
+  );
+  sdk.api.register("listSessions", mapApiErrors(sessionHandlers.listSessions));
+  sdk.api.register(
+    "getSessionEntries",
+    mapApiErrors(sessionHandlers.getSessionEntries),
+  );
+  sdk.api.register(
+    "getCurrentProjectId",
+    mapApiErrors(sessionHandlers.getCurrentProjectId),
+  );
+  sdk.api.register("getRequest", mapApiErrors(requestHandlers.getRequest));
+  sdk.api.register("getWordlists", mapApiErrors(wordlistHandlers.getWordlists));
+  sdk.api.register(
+    "clearWordlists",
+    mapApiErrors(wordlistHandlers.clearWordlists),
+  );
+  sdk.api.register(
+    "importWordlist",
+    mapApiErrors(wordlistHandlers.importWordlist),
+  );
+  sdk.api.register(
+    "deleteWordlist",
+    mapApiErrors(wordlistHandlers.deleteWordlist),
+  );
+  sdk.api.register(
+    "setWordlistEnabled",
+    mapApiErrors(wordlistHandlers.setWordlistEnabled),
+  );
+  sdk.api.register(
+    "setWordlistAttackTypes",
+    mapApiErrors(wordlistHandlers.setWordlistAttackTypes),
+  );
+  sdk.api.register("getSettings", mapApiErrors(settingsHandlers.getSettings));
+  sdk.api.register(
+    "patchSettings",
+    mapApiErrors(settingsHandlers.patchSettings),
+  );
 }

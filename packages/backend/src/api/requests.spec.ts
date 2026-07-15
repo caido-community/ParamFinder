@@ -1,8 +1,11 @@
 import { describe, expect, it, vi } from "vitest";
 
-import type { BackendSDK } from "../types/types";
+import type { BackendSDK } from "../types";
 
-import { getRequest } from "./requests";
+import { mapApiErrors } from "./error-mapper";
+import { createRequestHandlers } from "./requests";
+
+const { getRequest } = createRequestHandlers();
 
 describe("getRequest", () => {
   it("rejects an empty request ID before calling Caido", async () => {
@@ -62,5 +65,26 @@ describe("getRequest", () => {
     });
     if (result.success) expect(result.value.id).toEqual(expect.any(String));
     expect(sdk.requests.get).toHaveBeenCalledWith("caido-request-id");
+  });
+
+  it("returns an IO error when Caido request lookup fails", async () => {
+    const sdk = {
+      console: { error: vi.fn() },
+      requests: {
+        get: vi.fn().mockRejectedValue(new Error("Caido unavailable")),
+      },
+    } as unknown as BackendSDK;
+
+    await expect(
+      mapApiErrors(getRequest)(sdk, "caido-request-id"),
+    ).resolves.toEqual({
+      success: false,
+      error: {
+        code: "IO",
+        details: undefined,
+        message: "ParamFinder backend operation failed: Caido unavailable",
+      },
+    });
+    expect(sdk.console.error).toHaveBeenCalledWith("[API] Caido unavailable");
   });
 });

@@ -36,7 +36,6 @@ function createResponse(
   return {
     request,
     response: {
-      requestId: request.id,
       status: 200,
       headers: {},
       body: "ok",

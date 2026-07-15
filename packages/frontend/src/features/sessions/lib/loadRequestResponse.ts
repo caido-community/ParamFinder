@@ -40,7 +40,6 @@ export async function loadRequestResponse(
         context: "discovery",
       }),
       response: {
-        requestId: request.id,
         status: response.statusCode,
         headers: parsedResponse.headers,
         body: parsedResponse.body,

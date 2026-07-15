@@ -80,7 +80,6 @@ export const engineRequestSchema: z.ZodType<EngineRequest> = z.object({
 });
 
 export const engineResponseSchema: z.ZodType<EngineResponse> = z.object({
-  requestId: z.string().min(1),
   status: z.number().int().nonnegative(),
   headers: headersSchema,
   body: z.string(),
@@ -93,17 +92,13 @@ export const engineRequestResponseSchema: z.ZodType<EngineRequestResponse> =
 
 export const stableFactorsSchema: z.ZodType<StableFactors> = z.object({
   bodyStable: z.boolean(),
-  bodyLength: z.number().int().nonnegative(),
   bodyLengthStable: z.boolean(),
-  headersStable: z.boolean(),
   statusCodeStable: z.boolean(),
   reflectionStable: z.boolean(),
   similarityStable: z.boolean(),
   redirectStable: z.boolean(),
   reflectionsCount: z.number().int().nonnegative(),
-  statusCode: z.number().int().nonnegative(),
   unstableHeaders: z.array(z.string()),
-  similarity: z.number().min(0).max(1),
   redirect: z.string().min(1).optional(),
 });
 

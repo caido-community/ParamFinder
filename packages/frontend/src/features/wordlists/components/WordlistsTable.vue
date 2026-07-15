@@ -19,13 +19,11 @@ const emit = defineEmits<{
 }>();
 
 const wordlistsStore = useWordlistsStore();
-const { data: wordlists, loading, mutation } = storeToRefs(wordlistsStore);
+const { data: wordlists, loading, mutating } = storeToRefs(wordlistsStore);
 const { showResult } = useActionResult();
 const confirm = useConfirm();
 
 const displayName = (path: string) => path.replace(/^.*[\\/]/, "");
-
-const isRowBusy = () => mutation.value !== undefined;
 
 const toggleEnabled = async (wordlist: Wordlist) => {
   showResult(await wordlistsStore.toggle(wordlist), {
@@ -92,7 +90,7 @@ const clearAll = () => {
           size="small"
           severity="secondary"
           outlined
-          :disabled="wordlists.length === 0 || mutation !== undefined"
+          :disabled="wordlists.length === 0 || mutating"
           @click="clearAll"
         />
       </div>
@@ -124,7 +122,7 @@ const clearAll = () => {
           <Checkbox
             :model-value="data.enabled"
             binary
-            :disabled="isRowBusy()"
+            :disabled="mutating"
             @update:model-value="toggleEnabled(data)"
           />
         </template>
@@ -143,7 +141,7 @@ const clearAll = () => {
             option-value="value"
             multiple
             size="small"
-            :disabled="isRowBusy()"
+            :disabled="mutating"
             @update:model-value="onAttackTypesChange(data, $event)"
           />
         </template>
@@ -156,8 +154,8 @@ const clearAll = () => {
             size="small"
             severity="secondary"
             text
-            :loading="isRowBusy()"
-            :disabled="isRowBusy()"
+            :loading="mutating"
+            :disabled="mutating"
             @click="remove(data)"
           />
         </template>

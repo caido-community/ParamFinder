@@ -18,7 +18,7 @@ import {
   type SessionFinding,
   type SessionRef,
 } from "shared";
-import { computed, readonly, ref } from "vue";
+import { computed, ref } from "vue";
 
 import { loadRequestResponse } from "../lib/loadRequestResponse";
 
@@ -429,7 +429,6 @@ export const useSessionsStore = defineStore("sessions", () => {
       sort: options.sort ?? current?.sort,
       filter: options.filter ?? current?.filter,
       loading: true,
-      error: undefined,
       requestId: (previous?.requestId ?? 0) + 1,
     };
     dispatch({ type: "ENTRY_LOAD_STARTED", key, cache: loading });
@@ -455,7 +454,6 @@ export const useSessionsStore = defineStore("sessions", () => {
           type: "ENTRY_LOAD_FAILED",
           key,
           requestId: loading.requestId,
-          error: result.error.message,
         });
         sdk.window.showToast(
           `Failed to load session ${kind} entries: ${result.error.message}`,
@@ -482,7 +480,6 @@ export const useSessionsStore = defineStore("sessions", () => {
           type: "ENTRY_LOAD_FAILED",
           key,
           requestId: loading.requestId,
-          error: message,
         });
         sdk.window.showToast(
           `Failed to load session ${kind} entries: ${message}`,
@@ -732,7 +729,6 @@ export const useSessionsStore = defineStore("sessions", () => {
   };
 
   return {
-    state: readonly(model),
     activeActionLoading,
     noProjectSelected,
     hydrated,

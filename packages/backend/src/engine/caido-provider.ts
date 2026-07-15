@@ -9,9 +9,9 @@ import type { SDK } from "caido:plugin";
 import { RequestSpec } from "caido:utils";
 
 export class CaidoRequestProvider implements RequestProvider {
-  public constructor(private readonly sdk: SDK) {}
+  constructor(private readonly sdk: SDK) {}
 
-  public async send(
+  async send(
     request: EngineRequest,
     options?: RequestProviderSendOptions,
   ): Promise<EngineRequestResponse> {
@@ -33,7 +33,6 @@ export class CaidoRequestProvider implements RequestProvider {
         id: requestId,
       },
       response: {
-        requestId,
         status: sent.response.getCode(),
         headers: createHeaderMap(sent.response.getHeaders()),
         body: body?.toText() ?? "",

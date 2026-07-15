@@ -48,7 +48,6 @@ export type SessionsMessage =
       type: "ENTRY_LOAD_FAILED";
       key: string;
       requestId: number;
-      error: string;
     }
   | {
       type: "ACTION_STARTED";
@@ -260,7 +259,7 @@ export function update(
         ...model,
         caches: {
           ...model.caches,
-          [message.key]: { ...cache, loading: false, error: message.error },
+          [message.key]: { ...cache, loading: false },
         },
       };
     }

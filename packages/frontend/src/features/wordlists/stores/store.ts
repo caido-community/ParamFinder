@@ -1,81 +1,100 @@
 import { defineStore } from "pinia";
-import { type ApiResult, type AttackType, error, type Wordlist } from "shared";
-import { computed, readonly, ref } from "vue";
+import {
+  type ApiResult,
+  type AttackType,
+  error,
+  ok,
+  type Wordlist,
+} from "shared";
+import { ref } from "vue";
 
-import {
-  importRemoteWordlist,
-  loadWordlists,
-  runWordlistMutation,
-} from "./store.effects";
-import {
-  initialModel,
-  type WordlistMutation,
-  type WordlistsMessage,
-  type WordlistsModel,
-} from "./store.model";
-import { update as updateModel } from "./store.update";
+import { fetchRemoteWordlist } from "./remote";
 
 import { useSDK } from "@/plugins/sdk";
+import { toErrorMessage } from "@/shared/utils/backend";
 
 export const useWordlistsStore = defineStore("wordlists", () => {
   const sdk = useSDK();
-  const model = ref<WordlistsModel>(initialModel);
+  const data = ref<Wordlist[]>([]);
+  const loading = ref(false);
+  const mutating = ref(false);
 
-  const dispatch = (message: WordlistsMessage) => {
-    model.value = updateModel(model.value, message);
+  const load = async (): Promise<ApiResult<Wordlist[]>> => {
+    loading.value = true;
+    try {
+      const result = await sdk.backend.getWordlists();
+      if (result.success) {
+        data.value = result.value;
+      }
+      return result;
+    } catch (cause: unknown) {
+      return error(toErrorMessage(cause));
+    } finally {
+      loading.value = false;
+    }
   };
 
-  const data = computed(() => model.value.data);
-  const loading = computed(() => model.value.loading);
-  const storeError = computed(() => model.value.error);
-  const mutation = computed(() => model.value.mutation);
-
-  const load = () => loadWordlists(sdk, dispatch);
-
-  const mutate = (
-    nextMutation: WordlistMutation,
+  const mutate = async (
     request: () => Promise<ApiResult<unknown>>,
-  ) => {
-    if (model.value.mutation !== undefined) {
-      return Promise.resolve(
-        error("Another wordlist operation is already in progress.", "CONFLICT"),
+  ): Promise<ApiResult<void>> => {
+    if (mutating.value) {
+      return error(
+        "Another wordlist operation is already in progress.",
+        "CONFLICT",
       );
     }
-    return runWordlistMutation(sdk, dispatch, nextMutation, request);
+
+    mutating.value = true;
+    try {
+      const result = await request();
+      if (!result.success) {
+        return result;
+      }
+
+      const refreshed = await sdk.backend.getWordlists();
+      if (!refreshed.success) {
+        return refreshed;
+      }
+
+      data.value = refreshed.value;
+      return ok(undefined);
+    } catch (cause: unknown) {
+      return error(toErrorMessage(cause));
+    } finally {
+      mutating.value = false;
+    }
   };
 
   const importText = (filename: string, content: string) =>
-    mutate({ type: "import", filename }, () =>
-      sdk.backend.importWordlist(content, filename),
-    );
+    mutate(() => sdk.backend.importWordlist(content, filename));
 
   const importRemote = (filename: string, url: string) =>
-    mutate({ type: "import", filename }, () =>
-      importRemoteWordlist(sdk, filename, url),
-    );
+    mutate(async () => {
+      const download = await fetchRemoteWordlist(url);
+      return download.success
+        ? sdk.backend.importWordlist(download.value, filename)
+        : download;
+    });
 
   const toggle = (wordlist: Wordlist) =>
-    mutate({ type: "toggle", path: wordlist.path }, () =>
+    mutate(() =>
       sdk.backend.setWordlistEnabled(wordlist.path, !wordlist.enabled),
     );
 
   const updateAttackTypes = (wordlist: Wordlist, attackTypes: AttackType[]) =>
-    mutate({ type: "attackTypes", path: wordlist.path, attackTypes }, () =>
+    mutate(() =>
       sdk.backend.setWordlistAttackTypes(wordlist.path, attackTypes),
     );
 
   const remove = (path: string) =>
-    mutate({ type: "remove", path }, () => sdk.backend.deleteWordlist(path));
+    mutate(() => sdk.backend.deleteWordlist(path));
 
-  const clear = () =>
-    mutate({ type: "clear" }, () => sdk.backend.clearWordlists());
+  const clear = () => mutate(() => sdk.backend.clearWordlists());
 
   return {
-    state: readonly(model),
     data,
     loading,
-    error: storeError,
-    mutation,
+    mutating,
     load,
     importText,
     importRemote,

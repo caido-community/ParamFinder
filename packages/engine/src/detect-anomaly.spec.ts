@@ -39,7 +39,6 @@ function createRequestResponse(args?: {
       context: "learning",
     },
     response: {
-      requestId: "request-1",
       status,
       headers,
       body,
@@ -55,17 +54,13 @@ function createProfile(): BaselineProfile {
     initialRequestResponse: createRequestResponse(),
     stableFactors: {
       bodyStable: false,
-      bodyLength: 100,
       bodyLengthStable: true,
-      headersStable: false,
       statusCodeStable: false,
       reflectionStable: false,
       similarityStable: false,
       redirectStable: false,
       reflectionsCount: 0,
-      statusCode: 200,
       unstableHeaders: [],
-      similarity: 1,
     },
     bodyDiffReferenceCount: 0,
   };
@@ -130,9 +125,7 @@ describe("detectAnomaly", () => {
         Date: ["volatile"],
       },
     });
-    profile.stableFactors.bodyLength = "stable body".length;
     profile.stableFactors.bodyLengthStable = false;
-    profile.stableFactors.headersStable = false;
     profile.stableFactors.unstableHeaders = ["Date"];
 
     const anomaly = detectAnomaly(
@@ -163,9 +156,7 @@ describe("detectAnomaly", () => {
         "X-Stable": ["on"],
       },
     });
-    profile.stableFactors.bodyLength = "stable body".length;
     profile.stableFactors.bodyLengthStable = false;
-    profile.stableFactors.headersStable = true;
 
     const anomaly = detectAnomaly(
       profile,
@@ -184,7 +175,6 @@ describe("detectAnomaly", () => {
   it("flags newly introduced headers when header stability was learned", () => {
     const profile = createProfile();
     profile.stableFactors.bodyLengthStable = false;
-    profile.stableFactors.headersStable = true;
 
     const anomaly = detectAnomaly(
       profile,
@@ -211,7 +201,6 @@ describe("detectAnomaly", () => {
         Location: ["https://example.com/a"],
       },
     });
-    profile.stableFactors.bodyLength = "stable body".length;
     profile.stableFactors.bodyLengthStable = false;
     profile.stableFactors.redirectStable = true;
     profile.stableFactors.redirect = "https://example.com/a";
@@ -283,7 +272,6 @@ describe("detectAnomaly", () => {
         location: ["https://example.com/a"],
       },
     });
-    profile.stableFactors.bodyLength = "stable body".length;
     profile.stableFactors.bodyLengthStable = false;
     profile.stableFactors.redirectStable = true;
     profile.stableFactors.redirect = "https://example.com/a";
@@ -311,7 +299,6 @@ describe("detectAnomaly", () => {
     profile.initialRequestResponse = createRequestResponse({
       body: "alpha beta",
     });
-    profile.stableFactors.bodyLength = "alpha beta".length;
     profile.stableFactors.bodyLengthStable = false;
     profile.stableFactors.reflectionStable = true;
     profile.stableFactors.reflectionsCount = 1;
@@ -340,7 +327,6 @@ describe("detectAnomaly", () => {
       body: "line-one\nline-two",
     });
     profile.bodyDiffReferenceCount = 0;
-    profile.stableFactors.bodyLength = "line-one\nline-two".length;
     profile.stableFactors.bodyLengthStable = false;
     profile.stableFactors.bodyStable = true;
 
@@ -363,7 +349,6 @@ describe("detectAnomaly", () => {
     profile.initialRequestResponse = createRequestResponse({
       body: "a".repeat(120),
     });
-    profile.stableFactors.bodyLength = 120;
     profile.stableFactors.bodyLengthStable = false;
     profile.stableFactors.similarityStable = true;
 

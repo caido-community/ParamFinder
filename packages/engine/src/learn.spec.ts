@@ -34,7 +34,6 @@ function createRequestResponse(
         context: "learning",
       },
       response: {
-        requestId: "request-1",
         status: 200,
         headers,
         body,
@@ -55,7 +54,6 @@ describe("deriveBaselineProfile", () => {
       createRequestResponse("a".repeat(100)),
     ]);
 
-    expect(profile.stableFactors.bodyLength).toBe(100);
     expect(profile.stableFactors.bodyLengthStable).toBe(true);
   });
 
@@ -91,7 +89,6 @@ describe("deriveBaselineProfile", () => {
       }),
     ]);
 
-    expect(profile.stableFactors.headersStable).toBe(true);
     expect(profile.stableFactors.unstableHeaders).not.toContain("x-stable");
   });
 
@@ -111,7 +108,6 @@ describe("deriveBaselineProfile", () => {
       }),
     ]);
 
-    expect(profile.stableFactors.headersStable).toBe(true);
     expect(profile.stableFactors.unstableHeaders).toContain("date");
     expect(profile.stableFactors.unstableHeaders).not.toContain("x-stable");
   });

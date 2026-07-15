@@ -47,7 +47,6 @@ describe("loadRequestResponse", () => {
           raw: expect.stringContaining("POST /search?q=test"),
         }),
         response: expect.objectContaining({
-          requestId: "request-1",
           status: 200,
           body: "world",
           raw: expect.stringContaining("HTTP/1.1 200 OK"),

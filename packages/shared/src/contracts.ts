@@ -49,12 +49,10 @@ export type API = {
   ) => Promise<ApiResult<void>>;
   getSettings: () => Promise<ApiResult<Settings>>;
   patchSettings: (changes: SettingsChanges) => Promise<ApiResult<Settings>>;
-  getSettingsPath: () => Promise<ApiResult<string>>;
 };
 
 export type Events = {
   "paramfinder:session_change": (envelope: SessionChangeEnvelope) => void;
-  "paramfinder:update_available": () => void;
 };
 
 export type Spec = DefinePluginPackageSpec<{

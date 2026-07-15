@@ -216,68 +216,41 @@ export function createLearningWorkflows(
     profile: BaselineProfile,
     runOptions?: RunOptions,
   ): Promise<AdditionalChecksResult> => {
-    const result: AdditionalChecksResult = {
-      handlesSpecialCharacters: true,
-      handlesEncodedSpecialCharacters: true,
+    const parameterValue = createAdditionalCheckParameterValue(engineConfig);
+    const rawAnomaly = await probeAdditionalCheckParameter(
+      "paramFinder[]",
+      parameterValue,
+    );
+    const encodedHashObjectAnomaly = await probeAdditionalCheckParameter(
+      "paramFinder%5B%23hello%5D",
+      parameterValue,
+    );
+
+    return {
+      handlesSpecialCharacters: !rawAnomaly && !encodedHashObjectAnomaly,
+      handlesEncodedSpecialCharacters: !encodedHashObjectAnomaly,
     };
 
-    const parameterValue = createAdditionalCheckParameterValue(engineConfig);
-    const rawParameters = [{ name: "paramFinder[]", value: parameterValue }];
-    const rawResponse = await runtime.requests.sendMutatedRequest({
-      baseRequest: request,
-      parameters: rawParameters,
-      attackType: engineConfig.attackType,
-      context: "learning",
-      engineConfig,
-      runOptions,
-    });
+    async function probeAdditionalCheckParameter(name: string, value: string) {
+      await runtime.run.waitForCheckpoint(runOptions);
+      const parameters = [{ name, value }];
+      const requestResponse = await runtime.requests.sendMutatedRequest({
+        baseRequest: request,
+        parameters,
+        attackType: engineConfig.attackType,
+        context: "learning",
+        engineConfig,
+        runOptions,
+      });
 
-    runtime.events.detectAndEmitRequest(
-      runOptions,
-      rawResponse,
-      0,
-      rawParameters.length,
-    );
-    const rawAnomaly = detectAnomaly(
-      profile,
-      rawResponse.response,
-      rawParameters,
-    );
-
-    if (!rawAnomaly) {
-      return result;
+      runtime.events.detectAndEmitRequest(
+        runOptions,
+        requestResponse,
+        0,
+        parameters.length,
+      );
+      return detectAnomaly(profile, requestResponse.response, parameters);
     }
-
-    result.handlesSpecialCharacters = false;
-
-    const encodedParameters = [
-      { name: "paramFinder%5B%5D", value: parameterValue },
-    ];
-    const encodedResponse = await runtime.requests.sendMutatedRequest({
-      baseRequest: request,
-      parameters: encodedParameters,
-      attackType: engineConfig.attackType,
-      context: "learning",
-      engineConfig,
-      runOptions,
-    });
-
-    runtime.events.detectAndEmitRequest(
-      runOptions,
-      encodedResponse,
-      0,
-      encodedParameters.length,
-    );
-    const encodedAnomaly = detectAnomaly(
-      profile,
-      encodedResponse.response,
-      encodedParameters,
-    );
-    if (encodedAnomaly) {
-      result.handlesEncodedSpecialCharacters = false;
-    }
-
-    return result;
   };
 
   const checkForWaf = async (

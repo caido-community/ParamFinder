@@ -40,7 +40,6 @@ export class NodeRequestProvider implements RequestProvider {
     return {
       request,
       response: {
-        requestId: request.id,
         status: response.status,
         headers: responseHeaders,
         body,

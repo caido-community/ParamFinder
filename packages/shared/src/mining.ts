@@ -37,33 +37,12 @@ export type Settings = z.infer<typeof settingsSchema>;
 export const settingsChangesSchema = settingsSchema.partial().strict();
 export type SettingsChanges = z.infer<typeof settingsChangesSchema>;
 
-const normalizedParamMinerConfigSchema = engineConfigSchema.safeExtend({
+export const paramMinerConfigSchema = engineConfigSchema.safeExtend({
   delayBetweenRequests: z.number().int().nonnegative(),
   requestTimeoutSeconds: z.number().positive().optional(),
   scanTimeoutSeconds: z.number().positive().optional(),
   debug: z.boolean(),
 });
-
-export const paramMinerConfigSchema = z.preprocess((value) => {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    return value;
-  }
-
-  const config = value as Record<string, unknown>;
-  return {
-    ...config,
-    autopilotEnabled:
-      config.autopilotEnabled === undefined
-        ? config.attackType === "query"
-        : config.autopilotEnabled,
-    ignoreCloudflareBlocks:
-      config.ignoreCloudflareBlocks === undefined
-        ? false
-        : config.ignoreCloudflareBlocks,
-    customValueType:
-      config.customValueType === undefined ? "string" : config.customValueType,
-  };
-}, normalizedParamMinerConfigSchema);
 export type ParamMinerConfig = z.infer<typeof paramMinerConfigSchema>;
 
 export function settingsToParamMinerConfig(
@@ -151,7 +130,6 @@ const sessionDescriptorBaseSchema = z.object({
   findingsCount: z.number().int().nonnegative(),
   logsCount: z.number().int().nonnegative(),
   createdAt: z.number().int().nonnegative(),
-  updatedAt: z.number().int().nonnegative(),
   rerun: sessionRerunSchema.optional(),
 });
 
@@ -242,7 +220,6 @@ export type TerminalSessionDescriptor = z.infer<
 >;
 
 export const projectSessionSnapshotSchema = z.object({
-  version: z.literal(2),
   projectId: z.string().min(1),
   revision: z.number().int().nonnegative(),
   sessions: z.array(sessionDescriptorSchema),
@@ -324,7 +301,6 @@ export const sessionChangeSchema = z.discriminatedUnion("type", [
 export type SessionChange = z.infer<typeof sessionChangeSchema>;
 
 export const sessionChangeEnvelopeSchema = z.object({
-  version: z.literal(1),
   projectId: z.string().min(1),
   revision: z.number().int().nonnegative(),
   changes: z.array(sessionChangeSchema).min(1),

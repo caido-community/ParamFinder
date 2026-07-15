@@ -44,6 +44,5 @@ export function error(
 export type CursorPage<T> = {
   items: T[];
   nextCursor?: string;
-  total: number;
   snapshotMaxSequence: number;
 };

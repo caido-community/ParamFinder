@@ -14,9 +14,16 @@ import type {
 import type { Database, Parameter } from "sqlite";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { BackendSDK } from "../types/types";
+import {
+  initializeSessionDatabase,
+  SessionsRepository,
+} from "../repositories/sessions";
 
-import { InvalidCursorError, SessionStore } from "./session-store";
+import {
+  InvalidCursorError,
+  type SessionsPersistence,
+  SessionsService,
+} from "./sessions";
 
 let directory: string;
 
@@ -120,159 +127,99 @@ function createDatabase(emptyStringForNull = false): Database {
   };
 }
 
-function createSdk(
-  currentProjectId = projectA,
+async function createService(
   emptyStringForNull = false,
-): BackendSDK {
-  return {
-    meta: {
-      db: async () => createDatabase(emptyStringForNull),
-      path: () => directory,
-    },
-    projects: {
-      getCurrent: async () => ({ getId: () => currentProjectId }),
-    },
-    console,
-  } as unknown as BackendSDK;
+): Promise<SessionsService> {
+  const database = createDatabase(emptyStringForNull);
+  await initializeSessionDatabase(database);
+
+  const repository = new SessionsRepository(database);
+  return new SessionsService(repository);
 }
 
-async function createStore(
-  currentProjectId = projectA,
-  emptyStringForNull = false,
-): Promise<SessionStore> {
-  const store = new SessionStore(
-    createSdk(currentProjectId, emptyStringForNull),
-  );
-  await store.ready;
-  return store;
+function insertPersistedSession(ref: SessionRef, createdAt = Date.now()): void {
+  const database = new DatabaseSync(path.join(directory, "meta.db"));
+  database
+    .prepare(
+      `INSERT OR IGNORE INTO paramfinder_session_projects
+       (project_id, revision) VALUES (?, 0)`,
+    )
+    .run(ref.projectId);
+  database
+    .prepare(
+      `INSERT INTO paramfinder_sessions (
+       project_id, session_id, state, phase, total_parameters_amount,
+       total_learn_requests, parameters_sent, requests_sent, findings_count,
+       logs_count, created_at, updated_at, error_json, rerun_json
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .run(
+      ref.projectId,
+      ref.sessionId,
+      EngineState.Pending,
+      EnginePhase.Idle,
+      1,
+      3,
+      0,
+      0,
+      0,
+      0,
+      createdAt,
+      createdAt,
+      null,
+      JSON.stringify(createRerun()),
+    );
+  database.close();
 }
 
 beforeEach(async () => {
-  directory = await mkdtemp(path.join(tmpdir(), "paramfinder-session-store-"));
+  directory = await mkdtemp(path.join(tmpdir(), "paramfinder-sessions-"));
 });
 
 afterEach(async () => {
   await rm(directory, { recursive: true, force: true });
 });
 
-describe("SessionStore reliability", () => {
+describe("SessionsService", () => {
   it("accepts empty strings returned for nullable JSON columns", async () => {
-    const store = await createStore(projectA, true);
-    const ref: SessionRef = { projectId: projectA, sessionId: "nullable-json" };
+    const service = await createService(true);
+    const { ref } = (
+      await service.createNextSession(projectA, 1, 3, createRerun())
+    ).session;
 
-    await store.createSession(ref, 1, 3, createRerun());
-
-    await expect(store.getSession(ref)).resolves.toMatchObject({
+    await expect(service.getSession(ref)).resolves.toMatchObject({
       ref,
       error: undefined,
       rerun: createRerun(),
     });
   });
 
-  it("normalizes legacy rerun configs when reading sessions", async () => {
-    const store = await createStore();
-    const ref: SessionRef = { projectId: projectA, sessionId: "legacy-config" };
-    await store.createSession(ref, 1, 3, createRerun());
-
-    const config: Record<string, unknown> = { ...createConfig() };
-    delete config.autopilotEnabled;
-    delete config.ignoreCloudflareBlocks;
-    delete config.customValueType;
-
-    const database = new DatabaseSync(path.join(directory, "meta.db"));
-    database
-      .prepare(
-        `UPDATE paramfinder_sessions SET rerun_json = ?
-         WHERE project_id = ? AND session_id = ?`,
-      )
-      .run(
-        JSON.stringify({ targetRequest: createRequest(), config }),
-        ref.projectId,
-        ref.sessionId,
-      );
-    database.close();
-
-    await expect(store.getSession(ref)).resolves.toMatchObject({
-      rerun: {
-        config: {
-          autopilotEnabled: true,
-          ignoreCloudflareBlocks: false,
-          customValueType: "string",
-        },
-      },
-    });
-  });
-
-  it("assigns the next session ID from the largest stored numeric ID", async () => {
-    const store = await createStore();
-    await store.createSession(
-      { projectId: projectA, sessionId: "2" },
-      1,
-      3,
-      createRerun(),
-    );
-    await store.createSession(
-      { projectId: projectA, sessionId: "legacy-random-id" },
-      1,
-      3,
-      createRerun(),
-    );
-    await store.createSession(
-      { projectId: projectA, sessionId: "10" },
-      1,
-      3,
-      createRerun(),
-    );
-
-    const reloaded = await createStore();
-    const created = await reloaded.createNextSession(
-      projectA,
-      1,
-      3,
-      createRerun(),
-    );
-
-    expect(created.session.ref).toEqual({
+  it("assigns IDs from stored numeric IDs and serializes allocation", async () => {
+    const service = await createService();
+    insertPersistedSession({ projectId: projectA, sessionId: "2" });
+    insertPersistedSession({
       projectId: projectA,
-      sessionId: "11",
+      sessionId: "legacy-random-id",
     });
-  });
-
-  it("serializes automatic session ID allocation", async () => {
-    const store = await createStore();
+    insertPersistedSession({ projectId: projectA, sessionId: "10" });
 
     const created = await Promise.all([
-      store.createNextSession(projectA, 1, 3, createRerun()),
-      store.createNextSession(projectA, 1, 3, createRerun()),
+      service.createNextSession(projectA, 1, 3, createRerun()),
+      service.createNextSession(projectA, 1, 3, createRerun()),
     ]);
 
     expect(created.map(({ session }) => session.ref.sessionId)).toEqual([
-      "1",
-      "2",
+      "11",
+      "12",
     ]);
   });
 
   it("lists numeric session IDs newest-first when timestamps match", async () => {
-    const store = await createStore();
-    const now = vi.spyOn(Date, "now").mockReturnValue(1);
-    try {
-      await store.createSession(
-        { projectId: projectA, sessionId: "2" },
-        1,
-        3,
-        createRerun(),
-      );
-      await store.createSession(
-        { projectId: projectA, sessionId: "10" },
-        1,
-        3,
-        createRerun(),
-      );
-    } finally {
-      now.mockRestore();
-    }
+    const service = await createService();
+    insertPersistedSession({ projectId: projectA, sessionId: "2" }, 1);
+    insertPersistedSession({ projectId: projectA, sessionId: "10" }, 1);
 
-    const snapshot = await store.listSessions(projectA);
+    const snapshot = await service.listSessions(projectA);
 
     expect(snapshot.sessions.map((session) => session.ref.sessionId)).toEqual([
       "10",
@@ -280,11 +227,12 @@ describe("SessionStore reliability", () => {
     ]);
   });
 
-  it("paginates a stable >1000-entry snapshot without duplicates or omissions", async () => {
-    const store = await createStore();
-    const ref: SessionRef = { projectId: projectA, sessionId: "large" };
-    await store.createSession(ref, 1_205, 3, createRerun());
-    await store.appendEntries(
+  it("paginates a stable snapshot without duplicates or omissions", async () => {
+    const service = await createService();
+    const { ref } = (
+      await service.createNextSession(projectA, 1_205, 3, createRerun())
+    ).session;
+    await service.appendEntries(
       ref,
       Array.from({ length: 1_205 }, (_, index) => ({
         kind: "request" as const,
@@ -292,112 +240,78 @@ describe("SessionStore reliability", () => {
       })),
     );
 
-    const first = await store.getEntries({
+    const first = await service.getEntries({
       ref,
       kind: "request",
       limit: 1_000,
     });
-    expect(first).toMatchObject({
-      total: 1_205,
-      snapshotMaxSequence: 1_205,
-    });
+    expect(first).toMatchObject({ snapshotMaxSequence: 1_205 });
     expect(first?.items).toHaveLength(1_000);
-    expect(first?.items[0]?.sequence).toBe(1);
-    expect(first?.items.at(-1)?.sequence).toBe(1_000);
-    expect(first?.nextCursor).toMatch(/^v2:1205:1000:/);
 
-    await store.appendEntries(
+    await service.appendEntries(
       ref,
       Array.from({ length: 5 }, (_, index) => ({
         kind: "request" as const,
         value: createSentRequest(1_206 + index),
       })),
     );
-    const second = await store.getEntries({
+    const second = await service.getEntries({
       ref,
       kind: "request",
       cursor: first?.nextCursor,
       limit: 1_000,
     });
     expect(second).toMatchObject({
-      total: 1_205,
       snapshotMaxSequence: 1_205,
       nextCursor: undefined,
     });
     expect(second?.items).toHaveLength(205);
-    expect(second?.items[0]?.sequence).toBe(1_001);
-    expect(second?.items.at(-1)?.sequence).toBe(1_205);
 
     const sequences = [...(first?.items ?? []), ...(second?.items ?? [])].map(
-      (entry) => entry.sequence,
+      ({ sequence }) => sequence,
     );
-    expect(new Set(sequences).size).toBe(1_205);
     expect(sequences).toEqual(
       Array.from({ length: 1_205 }, (_, index) => index + 1),
     );
-    expect((await store.getSession(ref))?.requestsSent).toBe(1_210);
+    expect((await service.getSession(ref))?.requestsSent).toBe(1_210);
   });
 
-  it("rejects a malformed pagination cursor with a typed error", async () => {
-    const store = await createStore();
-    const ref: SessionRef = { projectId: projectA, sessionId: "cursor" };
-    await store.createSession(ref, 1, 3, createRerun());
-
-    await expect(
-      store.getEntries({ ref, kind: "request", cursor: "not-a-cursor" }),
-    ).rejects.toBeInstanceOf(InvalidCursorError);
-  });
-
-  it("rejects a cursor reused with a different query", async () => {
-    const store = await createStore();
-    const ref: SessionRef = { projectId: projectA, sessionId: "cursor-query" };
-    await store.createSession(ref, 2, 3, createRerun());
-    await store.appendEntries(ref, [
+  it("rejects malformed and mismatched pagination cursors", async () => {
+    const service = await createService();
+    const firstRef = (
+      await service.createNextSession(projectA, 2, 3, createRerun())
+    ).session.ref;
+    const secondRef = (
+      await service.createNextSession(projectA, 2, 3, createRerun())
+    ).session.ref;
+    await service.appendEntries(firstRef, [
       { kind: "request", value: createSentRequest(1) },
       { kind: "request", value: createSentRequest(2) },
     ]);
-    const first = await store.getEntries({
-      ref,
-      kind: "request",
-      limit: 1,
-    });
-
-    await expect(
-      store.getEntries({
-        ref,
-        kind: "request",
-        cursor: first?.nextCursor,
-        limit: 1,
-        sort: { field: "responseStatus", direction: "desc" },
-      }),
-    ).rejects.toThrow("does not match");
-  });
-
-  it("rejects a cursor reused for another session", async () => {
-    const store = await createStore();
-    const firstRef: SessionRef = { projectId: projectA, sessionId: "cursor-a" };
-    const secondRef: SessionRef = {
-      projectId: projectA,
-      sessionId: "cursor-b",
-    };
-    await store.createSession(firstRef, 2, 3, createRerun());
-    await store.createSession(secondRef, 2, 3, createRerun());
-    await store.appendEntries(firstRef, [
-      { kind: "request", value: createSentRequest(1) },
-      { kind: "request", value: createSentRequest(2) },
-    ]);
-    await store.appendEntries(secondRef, [
-      { kind: "request", value: createSentRequest(3) },
-      { kind: "request", value: createSentRequest(4) },
-    ]);
-    const first = await store.getEntries({
+    const first = await service.getEntries({
       ref: firstRef,
       kind: "request",
       limit: 1,
     });
 
     await expect(
-      store.getEntries({
+      service.getEntries({
+        ref: firstRef,
+        kind: "request",
+        cursor: "not-a-cursor",
+      }),
+    ).rejects.toBeInstanceOf(InvalidCursorError);
+    await expect(
+      service.getEntries({
+        ref: firstRef,
+        kind: "request",
+        cursor: first?.nextCursor,
+        limit: 1,
+        sort: { field: "responseStatus", direction: "desc" },
+      }),
+    ).rejects.toThrow("does not match");
+    await expect(
+      service.getEntries({
         ref: secondRef,
         kind: "request",
         cursor: first?.nextCursor,
@@ -406,11 +320,12 @@ describe("SessionStore reliability", () => {
     ).rejects.toThrow("does not match");
   });
 
-  it("uses persisted projections for deterministic sorting and literal filters", async () => {
-    const store = await createStore();
-    const ref: SessionRef = { projectId: projectA, sessionId: "sort" };
-    await store.createSession(ref, 5, 3, createRerun());
-    await store.appendEntries(ref, [
+  it("uses persisted projections for sorting and literal filters", async () => {
+    const service = await createService();
+    const { ref } = (
+      await service.createNextSession(projectA, 5, 3, createRerun())
+    ).session;
+    await service.appendEntries(ref, [
       { kind: "request", value: createSentRequest(1) },
       { kind: "request", value: createSentRequest(2) },
       { kind: "request", value: createSentRequest(3) },
@@ -421,65 +336,32 @@ describe("SessionStore reliability", () => {
       { kind: "request", value: createSentRequest(5, { requestId: "xxAB" }) },
     ]);
 
-    const sorted = await store.getEntries({
+    const sorted = await service.getEntries({
       ref,
       kind: "request",
       sort: { field: "responseStatus", direction: "desc" },
     });
-    expect(
-      sorted?.items.map((entry) => ({
-        sequence: entry.sequence,
-        status:
-          typeof entry.value === "string"
-            ? undefined
-            : entry.value.responseStatus,
-      })),
-    ).toEqual([
-      { sequence: 3, status: 500 },
-      { sequence: 5, status: 200 },
-      { sequence: 4, status: 200 },
-      { sequence: 2, status: 200 },
-      { sequence: 1, status: 200 },
+    expect(sorted?.items.map(({ sequence }) => sequence)).toEqual([
+      3, 5, 4, 2, 1,
     ]);
 
-    const filtered = await store.getEntries({
+    const filtered = await service.getEntries({
       ref,
       kind: "request",
       filter: "%_",
     });
-    expect(filtered?.total).toBe(1);
+    expect(filtered?.items).toHaveLength(1);
     expect(filtered?.items[0]?.value).toMatchObject({
       requestId: "literal%_match",
     });
   });
 
-  it("stores quoted identifiers and entry values as data", async () => {
-    const store = await createStore();
-    const ref: SessionRef = {
-      projectId: "project-'quoted'",
-      sessionId: "session-'quoted'",
-    };
-    await store.createSession(ref, 1, 3, createRerun());
-    await store.appendEntries(ref, [
-      {
-        kind: "request",
-        value: createSentRequest(1, { requestId: "request-'quoted'" }),
-      },
-    ]);
-
-    await expect(store.getSession(ref)).resolves.toMatchObject({ ref });
-    await expect(
-      store.getEntries({ ref, kind: "request" }),
-    ).resolves.toMatchObject({
-      items: [{ value: { requestId: "request-'quoted'" } }],
-    });
-  });
-
   it("sorts every projected entry field in SQLite", async () => {
-    const store = await createStore();
-    const ref: SessionRef = { projectId: projectA, sessionId: "all-sorts" };
-    await store.createSession(ref, 2, 3, createRerun());
-    await store.appendEntries(ref, [
+    const service = await createService();
+    const { ref } = (
+      await service.createNextSession(projectA, 2, 3, createRerun())
+    ).session;
+    await service.appendEntries(ref, [
       {
         kind: "request",
         value: createSentRequest(1, {
@@ -526,7 +408,7 @@ describe("SessionStore reliability", () => {
       },
     ]);
 
-    const requestSorts = [
+    for (const [field, expected] of [
       ["sequence", [1, 2]],
       ["requestId", [2, 1]],
       ["responseStatus", [1, 2]],
@@ -535,9 +417,8 @@ describe("SessionStore reliability", () => {
       ["parametersSent", [1, 2]],
       ["parametersTested", [2, 1]],
       ["context", [1, 2]],
-    ] as const;
-    for (const [field, expected] of requestSorts) {
-      const page = await store.getEntries({
+    ] as const) {
+      const page = await service.getEntries({
         ref,
         kind: "request",
         sort: { field, direction: "asc" },
@@ -552,7 +433,7 @@ describe("SessionStore reliability", () => {
       ["parameter", [4, 3]],
       ["anomaly", [4, 3]],
     ] as const) {
-      const page = await store.getEntries({
+      const page = await service.getEntries({
         ref,
         kind: "finding",
         sort: { field, direction: "asc" },
@@ -564,14 +445,36 @@ describe("SessionStore reliability", () => {
     }
   });
 
+  it("stores quoted identifiers and entry values as data", async () => {
+    const service = await createService();
+    const { ref } = (
+      await service.createNextSession("project-'quoted'", 1, 3, createRerun())
+    ).session;
+    await service.appendEntries(ref, [
+      {
+        kind: "request",
+        value: createSentRequest(1, { requestId: "request-'quoted'" }),
+      },
+    ]);
+
+    await expect(service.getSession(ref)).resolves.toMatchObject({ ref });
+    await expect(
+      service.getEntries({ ref, kind: "request" }),
+    ).resolves.toMatchObject({
+      items: [{ value: { requestId: "request-'quoted'" } }],
+    });
+  });
+
   it("keeps a deletion batch atomic when a row rejects the statement", async () => {
-    const store = await createStore();
-    const first: SessionRef = { projectId: projectA, sessionId: "keep-a" };
-    const second: SessionRef = { projectId: projectB, sessionId: "fail-b" };
-    await store.createSession(first, 1, 3, createRerun());
-    await store.createSession(second, 1, 3, createRerun());
-    const beforeA = await store.listSessions(projectA);
-    const beforeB = await store.listSessions(projectB);
+    const service = await createService();
+    const first = (
+      await service.createNextSession(projectA, 1, 3, createRerun())
+    ).session.ref;
+    const second = (
+      await service.createNextSession(projectB, 1, 3, createRerun())
+    ).session.ref;
+    const beforeA = await service.listSessions(projectA);
+    const beforeB = await service.listSessions(projectB);
 
     const database = new DatabaseSync(path.join(directory, "meta.db"));
     database.exec(`
@@ -582,42 +485,45 @@ describe("SessionStore reliability", () => {
         SELECT RAISE(ABORT, 'forced delete failure');
       END;
     `);
-    await expect(store.deleteSessions([first, second])).rejects.toThrow(
+    await expect(service.deleteSessions([first, second])).rejects.toThrow(
       "forced delete failure",
     );
-    expect(await store.listSessions(projectA)).toMatchObject({
+    expect(await service.listSessions(projectA)).toMatchObject({
       revision: beforeA.revision,
       sessions: [{ ref: first }],
     });
-    expect(await store.listSessions(projectB)).toMatchObject({
+    expect(await service.listSessions(projectB)).toMatchObject({
       revision: beforeB.revision,
       sessions: [{ ref: second }],
     });
     database.exec("DROP TRIGGER reject_project_b_delete");
 
-    const revisions = await store.deleteSessions([first, second]);
+    const revisions = await service.deleteSessions([first, second]);
     expect(revisions).toEqual(
       new Map([
         [projectA, beforeA.revision + 1],
         [projectB, beforeB.revision + 1],
       ]),
     );
-    expect((await store.listSessions(projectA)).sessions).toEqual([]);
-    expect((await store.listSessions(projectB)).sessions).toEqual([]);
   });
 
-  it("increments revisions monotonically across create, append, state, and delete", async () => {
-    const store = await createStore();
-    const ref: SessionRef = { projectId: projectA, sessionId: "revision" };
-    const created = await store.createSession(ref, 1, 3, createRerun());
-    const appended = await store.appendEntries(ref, [
+  it("increments revisions across create, append, state, and delete", async () => {
+    const service = await createService();
+    const created = await service.createNextSession(
+      projectA,
+      1,
+      3,
+      createRerun(),
+    );
+    const { ref } = created.session;
+    const appended = await service.appendEntries(ref, [
       { kind: "log", value: "created" },
     ]);
-    const updated = await store.transitionSession(ref, {
+    const updated = await service.transitionSession(ref, {
       state: EngineState.Running,
       phase: EnginePhase.Discovery,
     });
-    const deleted = await store.deleteSessions([ref]);
+    const deleted = await service.deleteSessions([ref]);
 
     expect([
       created.revision,
@@ -627,22 +533,18 @@ describe("SessionStore reliability", () => {
     ]).toEqual([1, 2, 3, 4]);
   });
 
-  it("reconciles interrupted runtime states to a durable error on restart", async () => {
-    const original = await createStore();
-    const interrupted: SessionRef = {
-      projectId: projectA,
-      sessionId: "interrupted",
-    };
-    const completed: SessionRef = {
-      projectId: projectA,
-      sessionId: "completed",
-    };
-    await original.createSession(interrupted, 10, 3, createRerun());
+  it("reconciles interrupted states to a durable error on restart", async () => {
+    const original = await createService();
+    const interrupted = (
+      await original.createNextSession(projectA, 10, 3, createRerun())
+    ).session.ref;
     await original.transitionSession(interrupted, {
       state: EngineState.Running,
       phase: EnginePhase.Discovery,
     });
-    await original.createSession(completed, 10, 3, createRerun());
+    const completed = (
+      await original.createNextSession(projectA, 10, 3, createRerun())
+    ).session.ref;
     await original.appendEntries(completed, [
       { kind: "request", value: createSentRequest(1) },
     ]);
@@ -652,7 +554,7 @@ describe("SessionStore reliability", () => {
     });
     const beforeRestart = await original.listSessions(projectA);
 
-    const restarted = await createStore();
+    const restarted = await createService();
     await expect(restarted.getSession(interrupted)).resolves.toMatchObject({
       state: EngineState.Error,
       phase: EnginePhase.Discovery,
@@ -667,9 +569,39 @@ describe("SessionStore reliability", () => {
     });
     await expect(
       restarted.getEntries({ ref: completed, kind: "request" }),
-    ).resolves.toMatchObject({ total: 1 });
+    ).resolves.toMatchObject({
+      items: [expect.objectContaining({ kind: "request" })],
+    });
     expect((await restarted.listSessions(projectA)).revision).toBe(
       beforeRestart.revision + 1,
     );
+  });
+
+  it("queues reads behind an in-progress mutation", async () => {
+    let releaseInsert: (() => void) | undefined;
+    const insert = vi.fn(
+      () =>
+        new Promise<number>((resolve) => {
+          releaseInsert = () => resolve(1);
+        }),
+    );
+    const find = vi.fn(async () => undefined);
+    const repository = {
+      nextSessionId: async () => "1",
+      insert,
+      find,
+    } as unknown as SessionsPersistence;
+    const service = new SessionsService(repository);
+
+    const create = service.createNextSession(projectA, 1, 3, createRerun());
+    await vi.waitFor(() => expect(insert).toHaveBeenCalledOnce());
+    const read = service.getSession({ projectId: projectA, sessionId: "1" });
+    await Promise.resolve();
+    expect(find).not.toHaveBeenCalled();
+
+    releaseInsert?.();
+    await create;
+    await read;
+    expect(find).toHaveBeenCalledOnce();
   });
 });

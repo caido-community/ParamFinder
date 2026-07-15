@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { fetchRemoteWordlist } from "./store.effects";
+import { fetchRemoteWordlist } from "./remote";
 
 describe("remote wordlist downloads", () => {
   it("rejects a declared response larger than 10 MiB before reading it", async () => {

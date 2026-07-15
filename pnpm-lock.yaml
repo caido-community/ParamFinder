@@ -118,9 +118,6 @@ importers:
         specifier: 3.5.34
         version: 3.5.34(typescript@5.5.4)
     devDependencies:
-      '@caido/sdk-backend':
-        specifier: ^0.56.2
-        version: 0.56.2
       '@caido/sdk-frontend':
         specifier: ^0.56.2
         version: 0.56.2(@ai-sdk/provider@3.0.10)(@codemirror/state@6.6.0)(@codemirror/view@6.43.0)(vue@3.5.34(typescript@5.5.4))

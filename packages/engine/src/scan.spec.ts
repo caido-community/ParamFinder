@@ -55,7 +55,6 @@ function createProvider(): RequestProvider {
       return {
         request,
         response: {
-          requestId: request.id,
           status: 200,
           headers: {},
           body,
@@ -90,7 +89,6 @@ function createFinding(parameter = "secret"): Finding {
   const requestResponse: EngineRequestResponse = {
     request: createBaseRequest(),
     response: {
-      requestId: "request-1",
       status: 200,
       headers: {},
       body: "interesting response",
@@ -353,7 +351,6 @@ function createCompletedProfile(): BaselineProfile {
     initialRequestResponse: {
       request: createBaseRequest(),
       response: {
-        requestId: "request-1",
         status: 200,
         headers: {},
         body: "baseline response",
@@ -364,17 +361,13 @@ function createCompletedProfile(): BaselineProfile {
     },
     stableFactors: {
       bodyStable: false,
-      bodyLength: 17,
       bodyLengthStable: true,
-      headersStable: true,
       statusCodeStable: true,
       reflectionStable: false,
       similarityStable: false,
       redirectStable: false,
       reflectionsCount: 0,
-      statusCode: 200,
       unstableHeaders: [],
-      similarity: 1,
     },
     bodyDiffReferenceCount: 0,
   };

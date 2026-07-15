@@ -20,7 +20,6 @@ const descriptor = (sessionId: string): SessionDescriptor => ({
   findingsCount: 0,
   logsCount: 0,
   createdAt: 1,
-  updatedAt: 1,
 });
 
 describe("sessions update", () => {
@@ -46,7 +45,6 @@ describe("sessions update", () => {
       type: "PROJECT_LOAD_SUCCESS",
       generation: 1,
       snapshot: {
-        version: 2,
         projectId: "project",
         revision: 7,
         sessions: [descriptor("hydrated")],
@@ -98,7 +96,6 @@ describe("sessions update", () => {
       type: "PROJECT_LOAD_SUCCESS",
       generation: 1,
       snapshot: {
-        version: 2,
         projectId: "project",
         revision: 2,
         sessions: [session],
@@ -118,7 +115,6 @@ describe("sessions update", () => {
     const gap = update(model, {
       type: "APPLY_ENVELOPE",
       envelope: {
-        version: 1,
         projectId: "project",
         revision: 3,
         changes: [{ type: "upsert", session: descriptor("gap") }],
@@ -129,7 +125,6 @@ describe("sessions update", () => {
     const next = update(model, {
       type: "APPLY_ENVELOPE",
       envelope: {
-        version: 1,
         projectId: "project",
         revision: 2,
         changes: [{ type: "upsert", session: descriptor("next") }],
@@ -174,7 +169,6 @@ describe("sessions update", () => {
       type: "ENTRY_LOAD_FAILED",
       key,
       requestId: 1,
-      error: "stale",
     });
     expect(stale).toBe(loading);
 
@@ -185,7 +179,6 @@ describe("sessions update", () => {
       replace: true,
       page: {
         items: [{ sequence: 1, kind: "log", value: "loaded" }],
-        total: 1,
         snapshotMaxSequence: 1,
       },
     });
@@ -197,11 +190,10 @@ describe("sessions update", () => {
         ...loaded,
         caches: { ...loaded.caches, [key]: { ...cache, requestId: 3 } },
       },
-      { type: "ENTRY_LOAD_FAILED", key, requestId: 3, error: "failed" },
+      { type: "ENTRY_LOAD_FAILED", key, requestId: 3 },
     );
     expect(failed.caches[key]).toMatchObject({
       loading: false,
-      error: "failed",
     });
   });
 
@@ -229,7 +221,7 @@ describe("sessions update", () => {
     const duplicate = update(started, {
       type: "ACTION_STARTED",
       sessionId: "session",
-      action: "delete",
+      action: "resume",
     });
     expect(duplicate).toBe(started);
 

@@ -9,7 +9,7 @@ import { useWordlistsStore } from "../stores/store";
 import { useActionResult } from "@/shared/composables/useActionResult";
 
 const wordlistsStore = useWordlistsStore();
-const { mutation } = storeToRefs(wordlistsStore);
+const { mutating } = storeToRefs(wordlistsStore);
 const { showResult } = useActionResult();
 
 const importing = ref<string | undefined>(undefined);
@@ -57,7 +57,7 @@ const importPreset = async (preset: (typeof wordlistPresets)[number]) => {
           severity="secondary"
           outlined
           :loading="importing === preset.name"
-          :disabled="mutation !== undefined"
+          :disabled="mutating"
           @click="importPreset(preset)"
         />
       </div>

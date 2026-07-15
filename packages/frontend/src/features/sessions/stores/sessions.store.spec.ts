@@ -42,7 +42,6 @@ function descriptor(projectId: string, sessionId: string): SessionDescriptor {
     findingsCount: 0,
     logsCount: 0,
     createdAt: 1,
-    updatedAt: 1,
   };
 }
 
@@ -51,7 +50,7 @@ function snapshot(
   revision: number,
   sessions: SessionDescriptor[],
 ): ProjectSessionSnapshot {
-  return { version: 2, projectId, revision, sessions };
+  return { projectId, revision, sessions };
 }
 
 function upsertEnvelope(
@@ -60,7 +59,6 @@ function upsertEnvelope(
   session: SessionDescriptor,
 ): SessionChangeEnvelope {
   return {
-    version: 1,
     projectId,
     revision,
     changes: [{ type: "upsert", session }],
@@ -72,7 +70,7 @@ function createSDK(overrides: Record<string, unknown> = {}): FrontendSDK {
     getCurrentProjectId: vi.fn(async () => ok<string | undefined>("a")),
     listSessions: vi.fn(async () => ok(snapshot("a", 1, []))),
     getSessionEntries: vi.fn(async () =>
-      ok({ items: [], total: 0, snapshotMaxSequence: 0 }),
+      ok({ items: [], snapshotMaxSequence: 0 }),
     ),
     pauseSession: vi.fn(async () => ok(undefined)),
     resumeSession: vi.fn(async () => ok(undefined)),
@@ -231,7 +229,6 @@ describe("sessions store reliability", () => {
                   },
                 ]
               : [],
-          total: query.kind === "log" ? 1 : 0,
           snapshotMaxSequence: query.kind === "log" ? 1 : 0,
         }),
     );
@@ -263,7 +260,6 @@ describe("sessions store reliability", () => {
       ReturnType<
         typeof ok<{
           items: Array<{ sequence: number; kind: "log"; value: string }>;
-          total: number;
           snapshotMaxSequence: number;
         }>
       >
@@ -278,7 +274,7 @@ describe("sessions store reliability", () => {
         ) {
           return refresh.promise;
         }
-        return ok({ items: [], total: 0, snapshotMaxSequence: 0 });
+        return ok({ items: [], snapshotMaxSequence: 0 });
       },
     );
     sdkHolder.current = createSDK({
@@ -297,7 +293,6 @@ describe("sessions store reliability", () => {
     refresh.resolve(
       ok({
         items: [{ sequence: 1, kind: "log", value: "loaded" }],
-        total: 1,
         snapshotMaxSequence: 1,
       }),
     );
@@ -317,7 +312,6 @@ describe("sessions store reliability", () => {
     await store.initialize();
 
     store.acceptEnvelope({
-      version: 1,
       projectId: "a",
       revision: 2,
       changes: [
@@ -360,7 +354,6 @@ describe("sessions store reliability", () => {
     expect(store.activeSession?.findings[0]?.sequence).toBe(2);
 
     store.acceptEnvelope({
-      version: 1,
       projectId: "a",
       revision: 3,
       changes: [
@@ -392,7 +385,7 @@ describe("sessions store reliability", () => {
   it("selects a newly announced session", async () => {
     const oldSession = descriptor("a", "old");
     const getSessionEntries = vi.fn(async () =>
-      ok({ items: [], total: 0, snapshotMaxSequence: 0 }),
+      ok({ items: [], snapshotMaxSequence: 0 }),
     );
     sdkHolder.current = createSDK({
       listSessions: vi.fn(async () => ok(snapshot("a", 1, [oldSession]))),
@@ -418,7 +411,7 @@ describe("sessions store reliability", () => {
     const newSession = descriptor("a", "new-session");
     const start = deferred<ReturnType<typeof ok<SessionDescriptor>>>();
     const getSessionEntries = vi.fn(async () =>
-      ok({ items: [], total: 0, snapshotMaxSequence: 0 }),
+      ok({ items: [], snapshotMaxSequence: 0 }),
     );
     sdkHolder.current = createSDK({
       listSessions: vi.fn(async () => ok(snapshot("a", 1, []))),
@@ -456,7 +449,6 @@ describe("sessions store reliability", () => {
               context: "discovery";
             };
           }>;
-          total: number;
           snapshotMaxSequence: number;
         }>
       >
@@ -482,10 +474,9 @@ describe("sessions store reliability", () => {
             ? refresh.promise
             : ok({
                 items: [firstRequest],
-                total: 1,
                 snapshotMaxSequence: 1,
               })
-          : ok({ items: [], total: 0, snapshotMaxSequence: 0 }),
+          : ok({ items: [], snapshotMaxSequence: 0 }),
       ),
     });
     const store = useSessionsStore();
@@ -499,9 +490,7 @@ describe("sessions store reliability", () => {
 
     expect(store.activeSession?.sentRequests).toHaveLength(1);
     expect(store.activeEntryState("request")?.loading).toBe(true);
-    refresh.resolve(
-      ok({ items: [firstRequest], total: 1, snapshotMaxSequence: 1 }),
-    );
+    refresh.resolve(ok({ items: [firstRequest], snapshotMaxSequence: 1 }));
     await loading;
     expect(store.activeSession?.sentRequests).toHaveLength(1);
   });
@@ -512,7 +501,6 @@ describe("sessions store reliability", () => {
       ReturnType<
         typeof ok<{
           items: [];
-          total: number;
           snapshotMaxSequence: number;
         }>
       >
@@ -522,7 +510,7 @@ describe("sessions store reliability", () => {
       getSessionEntries: vi.fn(async (query: { kind: string }) =>
         query.kind === "finding"
           ? findingPage.promise
-          : ok({ items: [], total: 0, snapshotMaxSequence: 0 }),
+          : ok({ items: [], snapshotMaxSequence: 0 }),
       ),
     });
     const store = useSessionsStore();
@@ -532,7 +520,6 @@ describe("sessions store reliability", () => {
     });
 
     store.acceptEnvelope({
-      version: 1,
       projectId: "a",
       revision: 2,
       changes: [
@@ -558,7 +545,7 @@ describe("sessions store reliability", () => {
     });
     expect(store.activeSession?.findings).toHaveLength(1);
 
-    findingPage.resolve(ok({ items: [], total: 0, snapshotMaxSequence: 0 }));
+    findingPage.resolve(ok({ items: [], snapshotMaxSequence: 0 }));
     await initializing;
 
     expect(store.activeDescriptor?.findingsCount).toBe(1);
@@ -671,7 +658,6 @@ describe("sessions store reliability", () => {
           context: "discovery",
         },
         response: {
-          requestId: "request-1",
           status: 200,
           headers: {},
           body: "",
@@ -718,7 +704,6 @@ describe("sessions store reliability", () => {
           context: "discovery",
         },
         response: {
-          requestId: "request-1",
           status: 200,
           headers: {},
           body: "",
@@ -757,7 +742,7 @@ describe("sessions store reliability", () => {
     const getSessionEntries = vi.fn(
       async (query: { kind: string; limit: number; cursor?: string }) => {
         if (query.kind !== "log" || query.limit !== 1_000) {
-          return ok({ items: [], total: 0, snapshotMaxSequence: 0 });
+          return ok({ items: [], snapshotMaxSequence: 0 });
         }
         const start = query.cursor === undefined ? 1 : 1_001;
         const count = query.cursor === undefined ? 1_000 : 200;
@@ -768,7 +753,6 @@ describe("sessions store reliability", () => {
             value: `log-${start + index}`,
           })),
           nextCursor: query.cursor === undefined ? "page-2" : undefined,
-          total: 1_200,
           snapshotMaxSequence: 1_200,
         });
       },
@@ -826,7 +810,6 @@ describe("sessions store reliability", () => {
     const store = useSessionsStore();
     await store.initialize();
     const envelope: SessionChangeEnvelope = {
-      version: 1,
       projectId: "a",
       revision: 2,
       changes: [

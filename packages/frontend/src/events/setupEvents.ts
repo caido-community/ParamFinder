@@ -15,10 +15,4 @@ export function setupEvents(
     sessions.acceptEnvelope(envelope);
     onSessionChange?.(envelope);
   });
-
-  sdk.backend.onEvent("paramfinder:update_available", () => {
-    sdk.window.showToast("ParamFinder update available in the Plugins page.", {
-      variant: "info",
-    });
-  });
 }

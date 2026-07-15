@@ -10,8 +10,6 @@ export type SessionStats = {
   findings: number;
   remaining: number;
   progress: number;
-  progressCurrent: number;
-  progressTotal: number;
 };
 
 export type StatusTone = "info" | "warning" | "success" | "danger" | "neutral";
@@ -96,8 +94,6 @@ export function getSessionStats(
     findings: session.findingsCount,
     remaining,
     progress,
-    progressCurrent,
-    progressTotal,
   };
 }
 
@@ -131,23 +127,4 @@ export function getSessionStateTitle(session: SessionDescriptor): string {
   return session.error === undefined
     ? label
     : `${label}: ${session.error.message}`;
-}
-
-export function getProgressLabel(
-  session: SessionDescriptor | undefined,
-  stats: SessionStats | undefined,
-): string {
-  if (session === undefined || stats === undefined) {
-    return "";
-  }
-
-  if (session.phase === MiningSessionPhase.Learning) {
-    return `${stats.progressCurrent} / ${stats.progressTotal} learn requests`;
-  }
-
-  if (session.phase === MiningSessionPhase.Discovery) {
-    return `${stats.progressCurrent} / ${stats.progressTotal} parameters`;
-  }
-
-  return "Awaiting work";
 }

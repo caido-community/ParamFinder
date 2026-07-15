@@ -55,7 +55,6 @@ function createProfile(): BaselineProfile {
     initialRequestResponse: {
       request: createRequest(),
       response: {
-        requestId: "request-1",
         status: 200,
         headers: {},
         body: "{}",
@@ -66,17 +65,13 @@ function createProfile(): BaselineProfile {
     },
     stableFactors: {
       bodyStable: true,
-      bodyLength: 2,
       bodyLengthStable: true,
-      headersStable: true,
       statusCodeStable: true,
       reflectionStable: false,
       similarityStable: true,
       redirectStable: false,
       reflectionsCount: 0,
-      statusCode: 200,
       unstableHeaders: [],
-      similarity: 1,
     },
     bodyDiffReferenceCount: 0,
     bodyKind: "json",
@@ -246,7 +241,7 @@ describe("config parsing", () => {
           ...createProfile(),
           stableFactors: {
             ...createProfile().stableFactors,
-            similarity: 2,
+            reflectionsCount: -1,
           },
         },
       }),

@@ -20,7 +20,7 @@ const emit = defineEmits<{
 }>();
 
 const wordlistsStore = useWordlistsStore();
-const { mutation } = storeToRefs(wordlistsStore);
+const { mutating } = storeToRefs(wordlistsStore);
 const { showResult } = useActionResult();
 
 const filename = ref("custom-params.txt");
@@ -103,7 +103,7 @@ const submit = async () => {
         <Button label="Cancel" severity="secondary" outlined @click="close" />
         <Button
           label="Create"
-          :disabled="!canSubmit || mutation !== undefined"
+          :disabled="!canSubmit || mutating"
           :loading="submitting"
           @click="submit"
         />

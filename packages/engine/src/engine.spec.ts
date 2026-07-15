@@ -59,7 +59,6 @@ function createProvider(): RequestProvider {
       return {
         request,
         response: {
-          requestId: request.id,
           status: 200,
           headers: {},
           body,
@@ -76,7 +75,6 @@ function createResponse(request: EngineRequest): EngineRequestResponse {
   return {
     request,
     response: {
-      requestId: request.id,
       status: 200,
       headers: {},
       body: "baseline response",
@@ -126,7 +124,6 @@ function createReflectionProfile(): BaselineProfile {
     initialRequestResponse: {
       request: createBaseRequest(),
       response: {
-        requestId: "request-1",
         status: 200,
         headers: {},
         body: "baseline response",
@@ -137,17 +134,13 @@ function createReflectionProfile(): BaselineProfile {
     },
     stableFactors: {
       bodyStable: false,
-      bodyLength: "baseline response".length,
       bodyLengthStable: false,
-      headersStable: true,
       statusCodeStable: true,
       reflectionStable: true,
       similarityStable: false,
       redirectStable: true,
       reflectionsCount: 0,
-      statusCode: 200,
       unstableHeaders: [],
-      similarity: 1,
     },
     bodyDiffReferenceCount: 0,
   };
@@ -197,7 +190,6 @@ describe("createDiscoveryEngine", () => {
           return {
             request,
             response: {
-              requestId: request.id,
               status: 200,
               headers: {},
               body,
@@ -282,7 +274,6 @@ describe("createDiscoveryEngine", () => {
           return {
             request,
             response: {
-              requestId: request.id,
               status: 200,
               headers: {},
               body,
@@ -323,7 +314,6 @@ describe("createDiscoveryEngine", () => {
           return {
             request,
             response: {
-              requestId: request.id,
               status: interesting ? 500 : 200,
               headers: {},
               body,
@@ -372,7 +362,6 @@ describe("createDiscoveryEngine", () => {
           return {
             request,
             response: {
-              requestId: request.id,
               status: 200,
               headers: {},
               body,
@@ -413,7 +402,6 @@ describe("createDiscoveryEngine", () => {
           return {
             request,
             response: {
-              requestId: request.id,
               status: 200,
               headers: {},
               body,
@@ -453,7 +441,6 @@ describe("createDiscoveryEngine", () => {
           return {
             request,
             response: {
-              requestId: request.id,
               status: 200,
               headers: {},
               body,
@@ -495,7 +482,6 @@ describe("createDiscoveryEngine", () => {
           return {
             request,
             response: {
-              requestId: request.id,
               status: isSecret ? 500 : 200,
               headers: {},
               body,
@@ -539,7 +525,6 @@ describe("createDiscoveryEngine", () => {
           return {
             request,
             response: {
-              requestId: request.id,
               status: isSecret ? 500 : 200,
               headers: {},
               body,
@@ -589,7 +574,6 @@ describe("createDiscoveryEngine", () => {
           return {
             request,
             response: {
-              requestId: request.id,
               status: isSecret ? 500 : 200,
               headers: {},
               body,
@@ -640,7 +624,6 @@ describe("createDiscoveryEngine", () => {
               return {
                 request,
                 response: {
-                  requestId: request.id,
                   status: 200,
                   headers: {
                     "X-Drift": ["1"],
@@ -661,7 +644,6 @@ describe("createDiscoveryEngine", () => {
             return {
               request,
               response: {
-                requestId: request.id,
                 status: 200,
                 headers: {},
                 body,
@@ -679,7 +661,6 @@ describe("createDiscoveryEngine", () => {
           return {
             request,
             response: {
-              requestId: request.id,
               status: 200,
               headers: {},
               body,
@@ -791,7 +772,6 @@ describe("createDiscoveryEngine", () => {
           return {
             request,
             response: {
-              requestId: request.id,
               status: 200,
               headers: {},
               body,
@@ -829,7 +809,6 @@ describe("createDiscoveryEngine", () => {
           return {
             request,
             response: {
-              requestId: request.id,
               status: 200,
               headers: {},
               body,
@@ -876,7 +855,6 @@ describe("createDiscoveryEngine", () => {
           return {
             request,
             response: {
-              requestId: request.id,
               status: blocked ? 403 : 200,
               headers: {},
               body,
@@ -930,7 +908,6 @@ describe("createDiscoveryEngine", () => {
           return {
             request,
             response: {
-              requestId: request.id,
               status: 200,
               headers: {},
               body: "",
@@ -982,7 +959,6 @@ describe("createDiscoveryEngine", () => {
           return {
             request,
             response: {
-              requestId: request.id,
               status: 200,
               headers: {},
               body,
@@ -1033,7 +1009,6 @@ describe("createDiscoveryEngine", () => {
           return {
             request,
             response: {
-              requestId: request.id,
               status: 200,
               headers: {},
               body,
@@ -1062,7 +1037,78 @@ describe("createDiscoveryEngine", () => {
     expect(result.state).toBe("completed");
     expect(additionalCheckBodies).toEqual([
       '{"paramFinder[]":12345678}',
-      '{"paramFinder%5B%5D":12345678}',
+      '{"paramFinder%5B%23hello%5D":12345678}',
+    ]);
+  });
+
+  it("filters hash-object parameters when the encoded learning probe triggers a parser error", async () => {
+    const learningQueries: string[] = [];
+    const discoveryQueries: string[] = [];
+    const learningParameterNames: string[] = [];
+    const engine = createTestEngine({
+      provider: {
+        async send(request): Promise<EngineRequestResponse> {
+          const parameters = new URLSearchParams(request.query);
+          const parameterNames = Array.from(parameters.keys());
+          if (request.context === "learning") {
+            learningQueries.push(request.query);
+            learningParameterNames.push(...parameterNames);
+          } else {
+            discoveryQueries.push(request.query);
+          }
+
+          const hasHashObjectParameter = parameterNames.some((name) =>
+            /\[#[^\]]+\]/.test(name),
+          );
+          const hasSecret = parameters.has("secret");
+          const status = hasHashObjectParameter ? 500 : 200;
+          const body = hasHashObjectParameter
+            ? "parameter parser error"
+            : hasSecret
+              ? "interesting response"
+              : "baseline response";
+
+          return {
+            request,
+            response: {
+              status,
+              headers: {},
+              body,
+              length: 0,
+              time: 10,
+              raw: `HTTP/1.1 ${status} ${status === 500 ? "Internal Server Error" : "OK"}\r\n\r\n${body}`,
+            },
+          };
+        },
+      },
+      random: () => 0,
+    });
+
+    const result = await engine.run({
+      request: createBaseRequest(),
+      words: ["randomparam[#hello]", "secret"],
+      engineConfig: createConfig({
+        additionalChecks: true,
+        maxQuerySize: 1000,
+      }),
+    });
+
+    expect(result.state).toBe("completed");
+    expect(result.profile?.additionalChecks).toEqual({
+      handlesSpecialCharacters: false,
+      handlesEncodedSpecialCharacters: false,
+    });
+    expect(learningParameterNames).toContain("paramFinder[#hello]");
+    expect(
+      learningQueries.some((query) =>
+        query.includes("paramFinder%5B%23hello%5D="),
+      ),
+    ).toBe(true);
+    expect(
+      discoveryQueries.every((query) => !query.includes("randomparam")),
+    ).toBe(true);
+    expect(result.findings.map((finding) => finding.parameter.name)).toEqual([
+      "secret",
     ]);
   });
 
@@ -1082,7 +1128,6 @@ describe("createDiscoveryEngine", () => {
           return {
             request,
             response: {
-              requestId: request.id,
               status: 200,
               headers: {},
               body,
@@ -1127,7 +1172,6 @@ describe("createDiscoveryEngine", () => {
           return {
             request,
             response: {
-              requestId: request.id,
               status,
               headers: {},
               body,
@@ -1259,7 +1303,6 @@ describe("createDiscoveryEngine", () => {
           return {
             request,
             response: {
-              requestId: request.id,
               status: 200,
               headers: {},
               body: "baseline response",
@@ -1414,7 +1457,6 @@ describe("createDiscoveryEngine", () => {
           return {
             request,
             response: {
-              requestId: request.id,
               status: 200,
               headers: {},
               body: "baseline response",
