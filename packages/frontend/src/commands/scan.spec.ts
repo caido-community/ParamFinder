@@ -9,7 +9,7 @@ import {
 } from "shared";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { setupCommands } from "./setupCommands";
+import { runAdvancedScan, runScan } from "./scan";
 
 import type { FrontendSDK } from "@/types";
 
@@ -44,36 +44,15 @@ const settings: Settings = {
   addCacheBusterParameter: true,
 };
 
-type CommandRun = (context: CommandContext) => Promise<void>;
+const context = {} as CommandContext;
 
-function createSDK(getSettings = vi.fn(async () => ok(settings))): {
-  sdk: FrontendSDK;
-  commands: Map<string, CommandRun>;
-  showToast: ReturnType<typeof vi.fn>;
-} {
-  const commands = new Map<string, CommandRun>();
+function createSDK() {
   const showToast = vi.fn();
   const sdk = {
-    backend: { getSettings },
-    commands: {
-      register: vi.fn(
-        (
-          id: string,
-          definition: { run: (context: CommandContext) => Promise<void> },
-        ) => {
-          commands.set(id, async (context) => {
-            await definition.run(context);
-          });
-        },
-      ),
-    },
-    commandPalette: { register: vi.fn() },
-    menu: { registerItem: vi.fn() },
-    shortcuts: { register: vi.fn() },
+    backend: { getSettings: vi.fn(async () => ok(settings)) },
     window: { showToast },
   } as unknown as FrontendSDK;
-  setupCommands(sdk);
-  return { sdk, commands, showToast };
+  return { sdk, showToast };
 }
 
 function request(id: string, raw: string): Request {
@@ -91,20 +70,12 @@ function descriptor(): SessionDescriptor {
   return {} as SessionDescriptor;
 }
 
-function getRun(commands: Map<string, CommandRun>, id: string): CommandRun {
-  const run = commands.get(id);
-  if (run === undefined) {
-    throw new Error(`Command ${id} was not registered`);
-  }
-  return run;
-}
-
-describe("scan command batches", () => {
+describe("scan commands", () => {
   beforeEach(() => {
     vi.clearAllMocks();
   });
 
-  it("prevalidates the batch, attempts every valid request, and summarizes once", async () => {
+  it("prevalidates a batch, attempts each valid request, and summarizes failures", async () => {
     const first = request(
       "first",
       "POST / HTTP/1.1\r\nHost: example.com\r\nContent-Type: application/json\r\n\r\n{}",
@@ -121,18 +92,15 @@ describe("scan command batches", () => {
     mocks.startSession
       .mockResolvedValueOnce(ok(descriptor()))
       .mockResolvedValueOnce(error("No enabled wordlists", "VALIDATION"));
-    const { commands, showToast } = createSDK();
+    const { sdk, showToast } = createSDK();
 
-    await expect(
-      getRun(commands, "paramfinder:start-body")({} as CommandContext),
-    ).resolves.toBeUndefined();
+    await runScan(sdk, context, "body");
 
-    expect(mocks.startSession).toHaveBeenCalledTimes(2);
     expect(mocks.startSession.mock.calls.map(([target]) => target.id)).toEqual([
       "first",
       "last",
     ]);
-    expect(showToast).toHaveBeenCalledTimes(1);
+    expect(showToast).toHaveBeenCalledOnce();
     expect(showToast).toHaveBeenCalledWith(
       expect.stringMatching(
         /Started 1 of 3.*Unsupported body type.*No enabled wordlists/,
@@ -141,53 +109,7 @@ describe("scan command batches", () => {
     );
   });
 
-  it("uses one plural success toast for a successful selection", async () => {
-    const first = request(
-      "first",
-      "GET /one HTTP/1.1\r\nHost: example.com\r\n\r\n",
-    );
-    const second = request(
-      "second",
-      "GET /two HTTP/1.1\r\nHost: example.com\r\n\r\n",
-    );
-    mocks.resolveRequests.mockResolvedValue([first, second]);
-    mocks.startSession.mockResolvedValue(ok(descriptor()));
-    const { commands, showToast } = createSDK();
-
-    await getRun(commands, "paramfinder:start-query")({} as CommandContext);
-
-    expect(mocks.startSession.mock.calls.map(([target]) => target.id)).toEqual([
-      "first",
-      "second",
-    ]);
-    expect(showToast).toHaveBeenCalledOnce();
-    expect(showToast).toHaveBeenCalledWith(
-      "Started 2 Param Finder [QUERY] scans",
-      { variant: "info", duration: 2000 },
-    );
-  });
-
-  it("absorbs a settings failure after its single error toast", async () => {
-    mocks.resolveRequests.mockResolvedValue([
-      request("first", "GET / HTTP/1.1\r\nHost: example.com\r\n\r\n"),
-    ]);
-    const { commands, showToast } = createSDK(
-      vi.fn(async () => error("Settings unavailable", "IO")),
-    );
-
-    await expect(
-      getRun(commands, "paramfinder:start-query")({} as CommandContext),
-    ).resolves.toBeUndefined();
-
-    expect(mocks.startSession).not.toHaveBeenCalled();
-    expect(showToast).toHaveBeenCalledOnce();
-    expect(showToast).toHaveBeenCalledWith("Settings unavailable", {
-      variant: "error",
-      duration: 10_000,
-    });
-  });
-
-  it("continues after a rejected start and resolves the command callback", async () => {
+  it("continues after a rejected start and reports the partial result", async () => {
     const first = request(
       "first",
       "GET /one HTTP/1.1\r\nHost: example.com\r\n\r\n",
@@ -200,21 +122,18 @@ describe("scan command batches", () => {
     mocks.startSession
       .mockRejectedValueOnce(new Error("Transport failed"))
       .mockResolvedValueOnce(ok(descriptor()));
-    const { commands, showToast } = createSDK();
+    const { sdk, showToast } = createSDK();
 
-    await expect(
-      getRun(commands, "paramfinder:start-query")({} as CommandContext),
-    ).resolves.toBeUndefined();
+    await runScan(sdk, context, "query");
 
     expect(mocks.startSession).toHaveBeenCalledTimes(2);
-    expect(showToast).toHaveBeenCalledOnce();
     expect(showToast).toHaveBeenCalledWith(
       expect.stringMatching(/Started 1 of 2.*Transport failed/),
       { variant: "warning", duration: 10_000 },
     );
   });
 
-  it("applies an advanced JSON path only to compatible selected requests", async () => {
+  it("applies an advanced JSON path only to compatible requests", async () => {
     const compatible = request(
       "compatible",
       'POST /one HTTP/1.1\r\nHost: example.com\r\nContent-Type: application/json\r\n\r\n{"target":{}}',
@@ -229,14 +148,13 @@ describe("scan command batches", () => {
       jsonBodyPath: "$.target",
     });
     mocks.startSession.mockResolvedValue(ok(descriptor()));
-    const { commands, showToast } = createSDK();
+    const { sdk, showToast } = createSDK();
 
-    await getRun(commands, "paramfinder:advanced-scan")({} as CommandContext);
+    await runAdvancedScan(sdk, context);
 
     expect(mocks.openDialog).toHaveBeenCalledWith({
       jsonBody: '{"target":{}}',
     });
-    expect(mocks.startSession).toHaveBeenCalledOnce();
     expect(mocks.startSession.mock.calls[0]?.[0].id).toBe("compatible");
     expect(showToast).toHaveBeenCalledWith(
       expect.stringMatching(

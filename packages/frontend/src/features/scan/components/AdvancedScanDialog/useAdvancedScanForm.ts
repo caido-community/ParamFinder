@@ -9,9 +9,8 @@ import { computed, nextTick, ref, watch } from "vue";
 import {
   type AdvancedScanCache,
   advancedScanCacheKey,
-  createAdvancedScanCache,
   createAdvancedScanFormValues,
-  createAdvancedScanResult,
+  createAdvancedScanOptions,
 } from "@/features/scan/lib/advancedScanForm";
 import { evaluateJsonBody } from "@/features/scan/lib/evaluateJsonBody";
 import type { AdvancedScanRequest } from "@/features/scan/stores/scanDialog";
@@ -56,7 +55,7 @@ export function useAdvancedScanForm() {
 
   let suppressPersist = false;
 
-  const reset = (request: AdvancedScanRequest) => {
+  const reset = async (request: AdvancedScanRequest) => {
     const values = createAdvancedScanFormValues(request, cache.value);
     suppressPersist = true;
     attackType.value = values.attackType;
@@ -66,14 +65,14 @@ export function useAdvancedScanForm() {
     maxParametersAmount.value = values.maxParametersAmount;
     bodyState.value = evaluateJsonBody(request.jsonBody);
     treeOpen.value = false;
-    void nextTick(() => {
-      suppressPersist = false;
-    });
+    await nextTick();
+    suppressPersist = false;
   };
 
   const submitValue = () => {
-    cache.value = createAdvancedScanCache(currentValues());
-    return createAdvancedScanResult(currentValues());
+    const options = createAdvancedScanOptions(currentValues());
+    cache.value = options;
+    return options;
   };
 
   const toggleTree = () => {
@@ -98,7 +97,7 @@ export function useAdvancedScanForm() {
     ],
     () => {
       if (!suppressPersist) {
-        cache.value = createAdvancedScanCache(currentValues());
+        cache.value = createAdvancedScanOptions(currentValues());
       }
     },
   );

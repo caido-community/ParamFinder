@@ -9,12 +9,6 @@ export const useSettingsStore = defineStore("settings", () => {
   const sdk = useSDK();
   const data = ref<Settings>();
   const saving = ref(false);
-  let pendingUpdate:
-    | {
-        changes: Partial<Settings>;
-        result: Promise<ApiResult<Settings>>;
-      }
-    | undefined;
 
   const initialize = async (): Promise<ApiResult<void>> => {
     try {
@@ -26,32 +20,6 @@ export const useSettingsStore = defineStore("settings", () => {
     } catch (cause: unknown) {
       return error(toErrorMessage(cause));
     }
-  };
-
-  const update = (changes: Partial<Settings>) => {
-    if (data.value === undefined) {
-      return Promise.resolve(error("Settings are not loaded yet.", "CONFLICT"));
-    }
-
-    const changedSettings = getChangedSettings(data.value, changes);
-    if (Object.keys(changedSettings).length === 0) {
-      return Promise.resolve(ok(data.value));
-    }
-
-    if (pendingUpdate !== undefined) {
-      if (settingsChangesEqual(pendingUpdate.changes, changedSettings)) {
-        return pendingUpdate.result;
-      }
-      return Promise.resolve(
-        error("Another settings update is already in progress.", "CONFLICT"),
-      );
-    }
-
-    const result = save(changedSettings).finally(() => {
-      pendingUpdate = undefined;
-    });
-    pendingUpdate = { changes: changedSettings, result };
-    return result;
   };
 
   const save = async (
@@ -67,6 +35,26 @@ export const useSettingsStore = defineStore("settings", () => {
     } finally {
       saving.value = false;
     }
+  };
+
+  const update = async (changes: Partial<Settings>) => {
+    if (data.value === undefined) {
+      return error("Settings are not loaded yet.", "CONFLICT");
+    }
+
+    const changedSettings = getChangedSettings(data.value, changes);
+    if (Object.keys(changedSettings).length === 0) {
+      return ok(data.value);
+    }
+
+    if (saving.value) {
+      return error(
+        "Another settings update is already in progress.",
+        "CONFLICT",
+      );
+    }
+
+    return save(changedSettings);
   };
 
   return {
@@ -88,21 +76,6 @@ function getChangedSettings(
     }
   }
   return changedSettings;
-}
-
-function settingsChangesEqual(
-  left: Partial<Settings>,
-  right: Partial<Settings>,
-): boolean {
-  const leftKeys = Object.keys(left) as (keyof Settings)[];
-  const rightKeys = Object.keys(right) as (keyof Settings)[];
-  return (
-    leftKeys.length === rightKeys.length &&
-    leftKeys.every(
-      (key) =>
-        Object.hasOwn(right, key) && settingsValueEqual(left[key], right[key]),
-    )
-  );
 }
 
 function settingsValueEqual(

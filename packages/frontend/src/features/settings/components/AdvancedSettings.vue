@@ -78,31 +78,30 @@ const anomalyOptions = Object.values(AnomalyType).map((type) => ({
 const getBool = (field: BooleanSettingKey) => data.value?.[field] === true;
 
 const setBool = (field: BooleanSettingKey, value: boolean) => {
-  void updateSettings({ [field]: value });
+  return updateSettings({ [field]: value });
 };
 
 const setMaxSize = (
   field: "maxQuerySize" | "maxHeaderSize" | "maxBodySize",
   value: number | undefined,
 ) => {
-  void updateSettings({ [field]: value });
+  return updateSettings({ [field]: value });
 };
 
 const setIgnoreAnomalyTypes = (value: AnomalyType[]) => {
-  void updateSettings({ ignoreAnomalyTypes: value });
+  return updateSettings({ ignoreAnomalyTypes: value });
 };
 
 const onAutoDetectMaxSize = (value: boolean) => {
   if (value) {
-    void updateSettings({
+    return updateSettings({
       autoDetectMaxSize: value,
       maxQuerySize: undefined,
       maxHeaderSize: undefined,
       maxBodySize: undefined,
     });
-    return;
   }
-  void updateSettings({ autoDetectMaxSize: value });
+  return updateSettings({ autoDetectMaxSize: value });
 };
 
 const numberPt = {

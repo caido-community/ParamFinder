@@ -59,15 +59,8 @@ const onScroll = (event: Event) => {
   }
 };
 
-const columnWidths = computed(() =>
-  Object.fromEntries(columns.map((column) => [column.field, column.width])),
-);
-
 const tableMinWidth = computed(() =>
-  columns.reduce(
-    (total, column) => total + Number.parseInt(column.width, 10),
-    0,
-  ),
+  columns.reduce((total, column) => total + column.width, 0),
 );
 
 const getRowKey = (row: Row) => String(row[keyField] ?? "");
@@ -151,7 +144,7 @@ const virtualRows = computed(() => {
               v-for="column in columns"
               :key="column.field"
               class="font-semibold dark:font-normal leading-[normal] overflow-hidden text-ellipsis whitespace-nowrap text-left border-y-2 border-x-0 border-solid border-surface-900 py-[0.375rem] px-2 cursor-pointer hover:bg-surface-700/50"
-              :style="{ width: columnWidths[column.field] }"
+              :style="{ width: `${column.width}px` }"
               @click="changeSort(column.field)"
             >
               <span class="flex items-center gap-2">
@@ -195,7 +188,7 @@ const virtualRows = computed(() => {
                   :key="`${getRowKey(virtualRow.row)}-${column.field}`"
                   class="leading-[normal] overflow-hidden text-ellipsis whitespace-nowrap text-left border-0 py-[0.375rem] px-2"
                   :class="column.cellClass"
-                  :style="{ width: columnWidths[column.field] }"
+                  :style="{ width: `${column.width}px` }"
                 >
                   {{ getCellText(virtualRow.row, column) }}
                 </td>

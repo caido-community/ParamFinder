@@ -56,7 +56,7 @@ export function useLogs() {
     }
   };
 
-  const loadMore = () => void store.loadEntries("log");
+  const loadMore = () => store.loadEntries("log");
 
   return {
     logs,

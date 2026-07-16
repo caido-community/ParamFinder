@@ -17,7 +17,7 @@ const updateSettings = async (updates: Partial<Settings>) => {
 };
 
 const setField = <K extends keyof Settings>(field: K, value: Settings[K]) => {
-  void updateSettings({ [field]: value });
+  return updateSettings({ [field]: value });
 };
 
 const numberPt = {

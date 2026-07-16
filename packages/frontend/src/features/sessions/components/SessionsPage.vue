@@ -18,21 +18,19 @@ const sessionsStore = useSessionsStore();
 const noProject = computed(() => sessionsStore.noProjectSelected);
 const hasSessions = computed(() => sessionsStore.list.length > 0);
 const hasActive = computed(() => sessionsStore.activeSession !== undefined);
+
+const emptyCardPt = {
+  root: { style: "display: flex; flex-direction: column;" },
+  body: { class: "flex-1 p-0 flex flex-col min-h-0" },
+  content: { class: "flex-1 flex items-center justify-center" },
+};
 </script>
 
 <template>
   <div class="h-full flex flex-col gap-1 min-h-0">
     <SessionTabs />
 
-    <Card
-      v-if="noProject"
-      class="flex-1 min-h-0"
-      :pt="{
-        root: { style: 'display: flex; flex-direction: column;' },
-        body: { class: 'flex-1 p-0 flex flex-col min-h-0' },
-        content: { class: 'flex-1 flex items-center justify-center' },
-      }"
-    >
+    <Card v-if="noProject" class="flex-1 min-h-0" :pt="emptyCardPt">
       <template #content>
         <div class="flex flex-col items-center gap-3 text-center px-6 py-12">
           <i class="fas fa-folder-open text-4xl text-surface-500" />
@@ -48,15 +46,7 @@ const hasActive = computed(() => sessionsStore.activeSession !== undefined);
       </template>
     </Card>
 
-    <Card
-      v-else-if="!hasSessions"
-      class="flex-1 min-h-0"
-      :pt="{
-        root: { style: 'display: flex; flex-direction: column;' },
-        body: { class: 'flex-1 p-0 flex flex-col min-h-0' },
-        content: { class: 'flex-1 flex items-center justify-center' },
-      }"
-    >
+    <Card v-else-if="!hasSessions" class="flex-1 min-h-0" :pt="emptyCardPt">
       <template #content>
         <div class="flex flex-col items-center gap-3 text-center px-6 py-12">
           <i class="fas fa-search text-4xl text-surface-500" />
@@ -107,15 +97,7 @@ const hasActive = computed(() => sessionsStore.activeSession !== undefined);
       </SplitterPanel>
     </Splitter>
 
-    <Card
-      v-else
-      class="flex-1 min-h-0"
-      :pt="{
-        root: { style: 'display: flex; flex-direction: column;' },
-        body: { class: 'flex-1 p-0 flex flex-col min-h-0' },
-        content: { class: 'flex-1 flex items-center justify-center' },
-      }"
-    >
+    <Card v-else class="flex-1 min-h-0" :pt="emptyCardPt">
       <template #content>
         <EmptyMessage :fill="false" icon="fas fa-arrow-up">
           Select a session above to view its details.

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import Card from "primevue/card";
-import { onMounted, onUnmounted, ref } from "vue";
+import { ref } from "vue";
 
 import PageHeader from "@/shared/components/PageHeader.vue";
 
@@ -20,6 +20,7 @@ const sections: Section[] = [
   { id: "settings", title: "Settings" },
   { id: "tips", title: "Tips" },
 ];
+const sectionsInReverse = sections.toReversed();
 
 const activeSection = ref<string>(sections[0]?.id ?? "");
 const contentRef = ref<HTMLElement>();
@@ -35,10 +36,7 @@ const handleScroll = () => {
 
   const scrollPosition = contentRef.value.scrollTop + 120;
 
-  for (let i = sections.length - 1; i >= 0; i--) {
-    const section = sections[i];
-    if (section === undefined) continue;
-
+  for (const section of sectionsInReverse) {
     const element = document.getElementById(section.id);
     if (element !== null && element.offsetTop <= scrollPosition) {
       activeSection.value = section.id;
@@ -46,14 +44,6 @@ const handleScroll = () => {
     }
   }
 };
-
-onMounted(() => {
-  contentRef.value?.addEventListener("scroll", handleScroll);
-});
-
-onUnmounted(() => {
-  contentRef.value?.removeEventListener("scroll", handleScroll);
-});
 
 const attackTypeInfo: { name: string; description: string }[] = [
   {
@@ -143,6 +133,7 @@ const commands: { name: string; description: string }[] = [
           <div
             ref="contentRef"
             class="h-full overflow-auto scroll-smooth px-6 py-5"
+            @scroll.passive="handleScroll"
           >
             <div class="max-w-2xl space-y-10 text-surface-300 leading-relaxed">
               <section id="how-it-works" class="scroll-mt-4 space-y-3">

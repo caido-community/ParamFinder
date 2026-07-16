@@ -407,6 +407,32 @@ describe("sessions store reliability", () => {
     expect(store.activeEntryState("log")?.entries).toEqual([]);
   });
 
+  it("uses the pre-envelope snapshot when applying multiple changes", async () => {
+    const first = descriptor("a", "first");
+    const second = { ...descriptor("a", "second"), createdAt: 2 };
+    sdkHolder.current = createSDK({
+      listSessions: vi.fn(async () => ok(snapshot("a", 1, [first, second]))),
+    });
+    const store = useSessionsStore();
+    await store.initialize();
+    store.setActiveSession("second");
+
+    store.acceptEnvelope({
+      projectId: "a",
+      revision: 2,
+      changes: [
+        { type: "delete", refs: [first.ref] },
+        { type: "upsert", session: first },
+      ],
+    });
+
+    expect(store.list.map((session) => session.ref.sessionId)).toEqual([
+      "first",
+      "second",
+    ]);
+    expect(store.activeDescriptor?.ref.sessionId).toBe("second");
+  });
+
   it("does not reload a fresh session when the start response follows its event", async () => {
     const newSession = descriptor("a", "new-session");
     const start = deferred<ReturnType<typeof ok<SessionDescriptor>>>();
@@ -668,7 +694,7 @@ describe("sessions store reliability", () => {
     );
     await loading;
 
-    expect(viewStore.getRequestDetailState("request-1")).toBeUndefined();
+    expect(viewStore.requestDetail).toEqual({ kind: "idle" });
   });
 
   it("clears stale request-detail loading during same-project hydration", async () => {
@@ -685,7 +711,7 @@ describe("sessions store reliability", () => {
     const loading = store.loadRequestDetails("request-1");
 
     await store.reloadForProject("a");
-    expect(viewStore.getRequestDetailState("request-1")).toBeUndefined();
+    expect(viewStore.requestDetail).toEqual({ kind: "idle" });
 
     response.resolve(
       ok({
@@ -714,7 +740,7 @@ describe("sessions store reliability", () => {
     );
     await loading;
 
-    expect(viewStore.getRequestDetailState("request-1")).toBeUndefined();
+    expect(viewStore.requestDetail).toEqual({ kind: "idle" });
   });
 
   it("clears action loading during same-project hydration", async () => {

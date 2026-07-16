@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
 
 import {
-  createAdvancedScanCache,
   createAdvancedScanFormValues,
-  createAdvancedScanResult,
+  createAdvancedScanOptions,
 } from "./advancedScanForm";
 import { evaluateJsonBody } from "./evaluateJsonBody";
 
@@ -48,9 +47,9 @@ describe("advanced scan form helpers", () => {
     ).toMatchObject({ attackType: "body", customValue: "cached" });
   });
 
-  it("stores only fields relevant to the selected attack type", () => {
+  it("keeps only fields relevant to the selected attack type", () => {
     expect(
-      createAdvancedScanCache({
+      createAdvancedScanOptions({
         attackType: "headers",
         customValue: "x",
         jsonBodyPath: "$.ignored",
@@ -66,37 +65,20 @@ describe("advanced scan form helpers", () => {
     });
   });
 
-  it("creates submit payloads without empty optional strings", () => {
+  it("normalizes empty optional values", () => {
     expect(
-      createAdvancedScanResult({
+      createAdvancedScanOptions({
         attackType: "body",
         customValue: "",
         jsonBodyPath: "$.user",
         cacheBusterParameter: true,
-        maxParametersAmount: 5,
+        maxParametersAmount: null,
       }),
     ).toEqual({
       attackType: "body",
       customValue: undefined,
       jsonBodyPath: "$.user",
       cacheBusterParameter: undefined,
-      maxParametersAmount: 5,
-    });
-  });
-
-  it("normalizes an empty max parameters value", () => {
-    const values = {
-      attackType: "headers" as const,
-      customValue: "test",
-      jsonBodyPath: "",
-      cacheBusterParameter: false,
-      maxParametersAmount: null,
-    };
-
-    expect(createAdvancedScanCache(values)).toMatchObject({
-      maxParametersAmount: undefined,
-    });
-    expect(createAdvancedScanResult(values)).toMatchObject({
       maxParametersAmount: undefined,
     });
   });

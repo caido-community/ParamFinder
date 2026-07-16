@@ -6,27 +6,28 @@ export type SessionRequestsTab = "requests" | "findings";
 export type SessionTabPlacement = "before" | "after";
 
 export type RequestDetailState =
-  | { status: "loading" }
-  | { status: "success"; response: RequestResponse }
-  | { status: "error"; error: string };
+  | { kind: "idle" }
+  | { kind: "loading"; requestId: string }
+  | { kind: "success"; requestId: string; response: RequestResponse }
+  | { kind: "error"; requestId: string; error: string };
 
 export const useSessionViewStore = defineStore("session-view", () => {
   const activeSessionId = ref<string>();
   const selectedRequestId = ref<string>();
   const selectedFindingKey = ref<string>();
   const requestsTab = ref<SessionRequestsTab>("findings");
-  const requestDetails = ref<Record<string, RequestDetailState>>({});
+  const requestDetail = ref<RequestDetailState>({ kind: "idle" });
   const sessionTabOrder = ref<string[]>([]);
 
-  const clearRequestDetails = () => {
-    requestDetails.value = {};
+  const clearRequestDetail = () => {
+    requestDetail.value = { kind: "idle" };
   };
 
   const setActiveSession = (id: string | undefined) => {
     activeSessionId.value = id;
     selectedRequestId.value = undefined;
     selectedFindingKey.value = undefined;
-    clearRequestDetails();
+    clearRequestDetail();
   };
 
   const moveSessionTab = (
@@ -58,13 +59,13 @@ export const useSessionViewStore = defineStore("session-view", () => {
   const setSelectedRequest = (id: string | undefined) => {
     selectedRequestId.value = id;
     selectedFindingKey.value = undefined;
-    clearRequestDetails();
+    clearRequestDetail();
   };
 
   const setSelectedFinding = (requestId: string, findingKey: string) => {
     selectedRequestId.value = requestId;
     selectedFindingKey.value = findingKey;
-    clearRequestDetails();
+    clearRequestDetail();
   };
 
   const setRequestsTab = (tab: SessionRequestsTab) => {
@@ -76,22 +77,19 @@ export const useSessionViewStore = defineStore("session-view", () => {
     setSelectedFinding(requestId, findingKey);
   };
 
-  const getRequestDetailState = (requestId: string | undefined) =>
-    requestId === undefined ? undefined : requestDetails.value[requestId];
-
   const startRequestDetail = (requestId: string) => {
-    requestDetails.value[requestId] = { status: "loading" };
+    requestDetail.value = { kind: "loading", requestId };
   };
 
   const completeRequestDetail = (
     requestId: string,
     response: RequestResponse,
   ) => {
-    requestDetails.value[requestId] = { status: "success", response };
+    requestDetail.value = { kind: "success", requestId, response };
   };
 
   const failRequestDetail = (requestId: string, error: string) => {
-    requestDetails.value[requestId] = { status: "error", error };
+    requestDetail.value = { kind: "error", requestId, error };
   };
 
   return {
@@ -99,8 +97,9 @@ export const useSessionViewStore = defineStore("session-view", () => {
     selectedRequestId,
     selectedFindingKey,
     requestsTab,
+    requestDetail,
     sessionTabOrder,
-    clearRequestDetails,
+    clearRequestDetail,
     setActiveSession,
     moveSessionTab,
     resetSessionTabOrder,
@@ -108,7 +107,6 @@ export const useSessionViewStore = defineStore("session-view", () => {
     setSelectedFinding,
     setRequestsTab,
     openFinding,
-    getRequestDetailState,
     startRequestDetail,
     completeRequestDetail,
     failRequestDetail,

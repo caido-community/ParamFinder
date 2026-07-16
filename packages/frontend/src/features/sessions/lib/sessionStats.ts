@@ -64,33 +64,18 @@ export function getSessionStats(
     return undefined;
   }
 
-  const progressCounts = {
-    learningRequests:
-      session.phase === MiningSessionPhase.Learning ? session.requestsSent : 0,
-    parametersTested: session.parametersSent,
-  };
-
   const inLearning = session.phase === MiningSessionPhase.Learning;
-  const progressTotal = inLearning
+  const total = inLearning
     ? session.totalLearnRequests
     : session.totalParametersAmount;
-  const rawProgressCurrent = inLearning
-    ? progressCounts.learningRequests
-    : progressCounts.parametersTested;
-  const progressCurrent =
-    progressTotal > 0
-      ? Math.min(rawProgressCurrent, progressTotal)
-      : rawProgressCurrent;
-  const progress =
-    progressTotal > 0
-      ? Math.min((progressCurrent / progressTotal) * 100, 100)
-      : 0;
-  const remaining =
-    progressTotal > 0 ? Math.max(progressTotal - progressCurrent, 0) : 0;
+  const rawCurrent = inLearning ? session.requestsSent : session.parametersSent;
+  const current = total > 0 ? Math.min(rawCurrent, total) : rawCurrent;
+  const progress = total > 0 ? (current / total) * 100 : 0;
+  const remaining = total > 0 ? Math.max(total - current, 0) : 0;
 
   return {
     requestsSent: session.requestsSent,
-    parametersTested: progressCounts.parametersTested,
+    parametersTested: session.parametersSent,
     findings: session.findingsCount,
     remaining,
     progress,

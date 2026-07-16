@@ -7,7 +7,6 @@ import { getFindingKey } from "@/features/sessions/lib/sessionRows";
 import { useSessionsStore } from "@/features/sessions/stores/sessions.store";
 import { useSessionViewStore } from "@/features/sessions/stores/sessionView.store";
 import { useSDK } from "@/plugins/sdk";
-import { useDownloadText } from "@/shared/composables/useDownloadText";
 import { toErrorMessage } from "@/shared/utils/backend";
 
 export function useResults() {
@@ -24,7 +23,6 @@ export function useResults() {
     () => store.activeEntryState("finding")?.nextCursor !== undefined,
   );
   const { copy: copyText } = useClipboard();
-  const { downloadText } = useDownloadText("paramfinder-findings.txt");
 
   const copy = async () => {
     if (findingCount.value === 0) {
@@ -67,12 +65,20 @@ export function useResults() {
       );
       return;
     }
-    downloadText(
-      result.value.map((finding) => finding.parameter.name).join("\n"),
+    const content = result.value
+      .map((finding) => finding.parameter.name)
+      .join("\n");
+    const url = URL.createObjectURL(
+      new Blob([content], { type: "text/plain" }),
     );
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "paramfinder-findings.txt";
+    anchor.click();
+    URL.revokeObjectURL(url);
   };
 
-  const loadMore = () => void store.loadEntries("finding");
+  const loadMore = () => store.loadEntries("finding");
 
   const openFinding = (finding: Sequenced<SessionFinding>) => {
     viewStore.openFinding(finding.requestId, getFindingKey(finding));

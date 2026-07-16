@@ -32,8 +32,8 @@ describe("VirtualSortTable DOM behavior", () => {
       props: {
         rows,
         columns: [
-          { field: "requestId", label: "ID", width: "80px" },
-          { field: "status", label: "Status", width: "80px" },
+          { field: "requestId", label: "ID", width: 80 },
+          { field: "status", label: "Status", width: 80 },
         ],
         keyField: "requestId",
         emptyIcon: "fas fa-inbox",
@@ -54,8 +54,8 @@ describe("VirtualSortTable DOM behavior", () => {
       props: {
         rows,
         columns: [
-          { field: "requestId", label: "ID", width: "80px" },
-          { field: "status", label: "Status", width: "80px" },
+          { field: "requestId", label: "ID", width: 80 },
+          { field: "status", label: "Status", width: 80 },
         ],
         keyField: "requestId",
         emptyIcon: "fas fa-inbox",

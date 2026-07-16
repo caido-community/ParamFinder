@@ -33,19 +33,7 @@ export function createAdvancedScanFormValues(
   };
 }
 
-export function createAdvancedScanCache(
-  values: AdvancedScanFormValues,
-): AdvancedScanCache {
-  return normalizeAdvancedScanValues(values);
-}
-
-export function createAdvancedScanResult(
-  values: AdvancedScanFormValues,
-): AdvancedScanOptions {
-  return normalizeAdvancedScanValues(values);
-}
-
-function normalizeAdvancedScanValues(
+export function createAdvancedScanOptions(
   values: AdvancedScanFormValues,
 ): AdvancedScanOptions {
   return {

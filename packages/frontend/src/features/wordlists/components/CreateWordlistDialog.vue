@@ -41,10 +41,6 @@ watch(
   },
 );
 
-const close = () => {
-  emit("update:visible", false);
-};
-
 const submit = async () => {
   if (!canSubmit.value) {
     return;
@@ -100,7 +96,12 @@ const submit = async () => {
 
     <template #footer>
       <div class="flex justify-end gap-2">
-        <Button label="Cancel" severity="secondary" outlined @click="close" />
+        <Button
+          label="Cancel"
+          severity="secondary"
+          outlined
+          @click="emit('update:visible', false)"
+        />
         <Button
           label="Create"
           :disabled="!canSubmit || mutating"

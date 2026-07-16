@@ -5,7 +5,7 @@ import Dialog from "primevue/dialog";
 import InputNumber from "primevue/inputnumber";
 import InputText from "primevue/inputtext";
 import SelectButton from "primevue/selectbutton";
-import { computed, nextTick, ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 
 import JsonPathTree from "./JsonPathTree/JsonPathTree.vue";
 import { useAdvancedScanForm } from "./useAdvancedScanForm";
@@ -46,15 +46,13 @@ const visible = computed({
 
 watch(
   () => store.request,
-  (next) => {
+  async (next) => {
     if (next === undefined) {
       return;
     }
 
-    reset(next);
-    void nextTick(() => {
-      customValueInput.value?.$el.focus();
-    });
+    await reset(next);
+    customValueInput.value?.$el.focus();
   },
 );
 

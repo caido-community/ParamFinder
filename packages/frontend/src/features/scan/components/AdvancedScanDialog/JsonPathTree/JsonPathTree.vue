@@ -65,8 +65,7 @@ const valueDisplay = computed(() => {
   return { text: "", color: "" };
 });
 
-const toggleExpanded = (event: MouseEvent) => {
-  event.stopPropagation();
+const toggleExpanded = () => {
   expanded.value = !expanded.value;
 };
 
@@ -74,10 +73,6 @@ const handleSelect = () => {
   if (isSelectable.value) {
     emit("select", path);
   }
-};
-
-const handleChildSelect = (childPath: string) => {
-  emit("select", childPath);
 };
 </script>
 
@@ -96,7 +91,7 @@ const handleChildSelect = (childPath: string) => {
       <span
         v-if="isExpandable"
         class="inline-flex items-center justify-center w-3 h-3 text-[9px] text-surface-400 hover:text-surface-100 shrink-0"
-        @click="toggleExpanded"
+        @click.stop="toggleExpanded"
       >
         <i :class="expanded ? 'fas fa-caret-down' : 'fas fa-caret-right'" />
       </span>
@@ -137,7 +132,7 @@ const handleChildSelect = (childPath: string) => {
         :path="child.path"
         :is-array-item="child.isArrayItem"
         :level="level + 1"
-        @select="handleChildSelect"
+        @select="emit('select', $event)"
       />
     </div>
   </div>

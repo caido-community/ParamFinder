@@ -24,23 +24,11 @@ const LOAD_DEBOUNCE_MS = 150;
 const store = useSessionsStore();
 const viewStore = useSessionViewStore();
 const { selectedRequestId } = storeToRefs(viewStore);
-const detailState = computed(() =>
-  viewStore.getRequestDetailState(selectedRequestId.value),
-);
-const requestResponse = computed(() =>
-  detailState.value?.status === "success"
-    ? detailState.value.response
-    : undefined,
-);
-const errorMessage = computed(() =>
-  detailState.value?.status === "error" ? detailState.value.error : undefined,
-);
-
 watchDebounced(
   selectedRequestId,
-  (requestId) => {
+  async (requestId) => {
     if (requestId !== undefined) {
-      void store.loadRequestDetails(requestId);
+      await store.loadRequestDetails(requestId);
     }
   },
   { debounce: LOAD_DEBOUNCE_MS, immediate: true },
@@ -53,42 +41,45 @@ const editorPanelPt = {
   },
 };
 
-const overlayState = computed(
-  (): { icon: string; message: string } | undefined => {
-    if (selectedRequestId.value === undefined) {
-      return {
-        icon: "fas fa-hand-pointer",
-        message: "Select a request to view its details.",
-      };
-    }
-    if (errorMessage.value !== undefined) {
-      return {
-        icon: "fas fa-triangle-exclamation",
-        message: errorMessage.value,
-      };
-    }
-    if (requestResponse.value === undefined) {
-      return {
-        icon: "fas fa-spinner fa-spin",
-        message: "Loading request details…",
-      };
-    }
-    return undefined;
-  },
-);
+const detailView = computed(() => {
+  if (selectedRequestId.value === undefined) {
+    return {
+      kind: "message" as const,
+      icon: "fas fa-hand-pointer",
+      message: "Select a request to view its details.",
+    };
+  }
+
+  const detail = viewStore.requestDetail;
+  if (detail.kind === "success") {
+    return { kind: "response" as const, response: detail.response };
+  }
+  if (detail.kind === "error") {
+    return {
+      kind: "message" as const,
+      icon: "fas fa-triangle-exclamation",
+      message: detail.error,
+    };
+  }
+  return {
+    kind: "message" as const,
+    icon: "fas fa-spinner fa-spin",
+    message: "Loading request details…",
+  };
+});
 </script>
 
 <template>
   <div class="flex flex-1 flex-col min-h-0 relative">
     <EmptyMessage
-      v-if="overlayState !== undefined"
+      v-if="detailView.kind === 'message'"
       :fill="false"
-      :icon="overlayState.icon"
+      :icon="detailView.icon"
     >
-      {{ overlayState.message }}
+      {{ detailView.message }}
     </EmptyMessage>
     <Splitter
-      v-if="requestResponse !== undefined"
+      v-else
       class="h-full min-h-0 bg-surface-900"
       :pt="{ root: { class: 'min-h-0 overflow-hidden border-0' } }"
     >
@@ -98,11 +89,11 @@ const overlayState = computed(
             <HTTPEditor
               :source="{
                 type: 'request',
-                raw: requestResponse.request.raw,
+                raw: detailView.response.request.raw,
                 connectionInfo: {
-                  host: requestResponse.request.host,
-                  port: requestResponse.request.port,
-                  isTls: requestResponse.request.tls,
+                  host: detailView.response.request.host,
+                  port: detailView.response.request.port,
+                  isTls: detailView.response.request.tls,
                 },
               }"
             />
@@ -115,7 +106,7 @@ const overlayState = computed(
             <HTTPEditor
               :source="{
                 type: 'response',
-                raw: requestResponse.response.raw ?? '',
+                raw: detailView.response.response.raw ?? '',
               }"
             />
           </template>

@@ -10,92 +10,35 @@ import {
 } from "@/features/scan/lib/buildMiningConfig";
 import { useScanDialogStore } from "@/features/scan/stores/scanDialog";
 import { useSessionsStore } from "@/features/sessions/stores/sessions.store";
-import { attackTypes } from "@/shared/constants/attackTypes";
-import { handleBackendCall, toErrorMessage } from "@/shared/utils/backend";
+import { toErrorMessage } from "@/shared/utils/backend";
 import { parseRequest } from "@/shared/utils/request";
 import type { FrontendSDK } from "@/types";
 
-const requestMenuTypes = ["RequestRow", "Request"] as const;
-const advancedScanCommandId = "paramfinder:advanced-scan";
-
-export function setupCommands(sdk: FrontendSDK): void {
-  for (const attackType of attackTypes) {
-    const commandId = `paramfinder:start-${attackType}`;
-    sdk.commands.register(commandId, {
-      name: `Param Finder [${attackType.toUpperCase()}]`,
-      group: "Param Finder",
-      run: async (context: CommandContext) => {
-        await runFromContext(sdk, context, attackType, {});
-      },
-    });
-    registerRequestMenuItems(sdk, commandId);
-    sdk.commandPalette.register(commandId);
-  }
-
-  sdk.commands.register(advancedScanCommandId, {
-    name: "Param Finder [ADVANCED]",
-    group: "Param Finder",
-    run: async (context: CommandContext) => {
-      await runAdvanced(sdk, context);
-    },
-  });
-  registerRequestMenuItems(sdk, advancedScanCommandId);
-  sdk.commandPalette.register(advancedScanCommandId);
-
-  sdk.commands.register("paramfinder:quick-menu", {
-    name: "Param Finder Quick Menu",
-    group: "Param Finder",
-    run: async (context: CommandContext) => {
-      await runAdvanced(sdk, context);
-    },
-  });
-  sdk.shortcuts.register("paramfinder:quick-menu", ["Control", "Shift", "E"]);
-}
-
-function registerRequestMenuItems(sdk: FrontendSDK, commandId: string): void {
-  for (const type of requestMenuTypes) {
-    sdk.menu.registerItem({
-      type,
-      commandId,
-      leadingIcon: "fas fa-search",
-    });
-  }
-}
-
-async function runAdvanced(
+export async function runAdvancedScan(
   sdk: FrontendSDK,
   context: CommandContext,
-): Promise<void> {
-  const dialog = useScanDialogStore();
-
+) {
   const requests = await resolveRequestsOrNotify(sdk, context);
-  if (requests.length === 0) {
-    return;
-  }
+  if (requests.length === 0) return;
 
-  const jsonBody = parseRequest(requests[0]?.raw ?? "").body;
-
-  const result = await dialog.open({ jsonBody });
-  if (result === undefined) {
-    return;
-  }
-  await runForRequests(sdk, requests, result.attackType, {
-    customValue: result.customValue,
-    jsonBodyPath: result.jsonBodyPath,
-    cacheBusterParameter: result.cacheBusterParameter,
-    maxParametersAmount: result.maxParametersAmount,
+  const dialog = useScanDialogStore();
+  const result = await dialog.open({
+    jsonBody: parseRequest(requests[0]?.raw ?? "").body,
   });
+  if (result === undefined) return;
+
+  const { attackType, ...options } = result;
+  await runForRequests(sdk, requests, attackType, options);
 }
 
-async function runFromContext(
+export async function runScan(
   sdk: FrontendSDK,
   context: CommandContext,
   attackType: AttackType,
-  options: AdvancedScanOptions,
-): Promise<void> {
+) {
   const requests = await resolveRequestsOrNotify(sdk, context);
   if (requests.length > 0) {
-    await runForRequests(sdk, requests, attackType, options);
+    await runForRequests(sdk, requests, attackType, {});
   }
 }
 
@@ -112,9 +55,9 @@ async function resolveRequestsOrNotify(
       );
     }
     return requests;
-  } catch (err: unknown) {
+  } catch (error: unknown) {
     sdk.window.showToast(
-      err instanceof Error ? err.message : "Failed to resolve the request.",
+      error instanceof Error ? error.message : "Failed to resolve the request.",
       { variant: "error", duration: 10_000 },
     );
     return [];
@@ -126,14 +69,23 @@ async function runForRequests(
   requests: Request[],
   attackType: AttackType,
   options: AdvancedScanOptions,
-): Promise<void> {
+) {
   let settings: Settings;
   try {
-    settings = await handleBackendCall<Settings>(
-      sdk.backend.getSettings(),
-      sdk,
-    );
-  } catch {
+    const result = await sdk.backend.getSettings();
+    if (!result.success) {
+      sdk.window.showToast(result.error.message, {
+        variant: "error",
+        duration: 10_000,
+      });
+      return;
+    }
+    settings = result.value;
+  } catch (error: unknown) {
+    sdk.window.showToast(toErrorMessage(error), {
+      variant: "error",
+      duration: 10_000,
+    });
     return;
   }
 
@@ -151,8 +103,8 @@ async function runForRequests(
         jsonBodyPath: config.jsonBodyPath,
       });
       validRequests.push(request);
-    } catch (err: unknown) {
-      failures.push(toErrorMessage(err));
+    } catch (error: unknown) {
+      failures.push(toErrorMessage(error));
     }
   }
 
@@ -165,8 +117,8 @@ async function runForRequests(
       } else {
         failures.push(result.error.message);
       }
-    } catch (err: unknown) {
-      failures.push(toErrorMessage(err));
+    } catch (error: unknown) {
+      failures.push(toErrorMessage(error));
     }
   }
 
@@ -179,7 +131,7 @@ function showStartSummary(
   total: number,
   started: number,
   failures: string[],
-): void {
+) {
   const scanLabel = `Param Finder [${attackType.toUpperCase()}]`;
   if (failures.length === 0) {
     const message =
@@ -200,11 +152,11 @@ function showStartSummary(
   });
 }
 
-function formatRequestCount(count: number): string {
+function formatRequestCount(count: number) {
   return `${count} request${count === 1 ? "" : "s"}`;
 }
 
-function summarizeFailures(failures: string[]): string {
+function summarizeFailures(failures: string[]) {
   const counts = new Map<string, number>();
   for (const failure of failures) {
     counts.set(failure, (counts.get(failure) ?? 0) + 1);

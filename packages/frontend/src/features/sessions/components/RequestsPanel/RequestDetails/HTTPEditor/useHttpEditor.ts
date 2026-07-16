@@ -1,8 +1,8 @@
-import { type EditorView } from "@codemirror/view";
+import type { EditorView } from "@codemirror/view";
 import { useEventListener } from "@vueuse/core";
 import { onMounted, type Ref, ref, watch } from "vue";
 
-import { usePageLifecycle } from "@/plugins/lifecycle";
+import { usePageEnterCounter } from "@/plugins/lifecycle";
 import { useSDK } from "@/plugins/sdk";
 import { toCrlf } from "@/shared/utils/request";
 
@@ -25,10 +25,10 @@ export function useHttpEditor(
   source: Readonly<Ref<HttpEditorSource>>,
 ) {
   const sdk = useSDK();
-  const lifecycle = usePageLifecycle();
+  const pageEnterCounter = usePageEnterCounter();
 
   const contextMenu = ref();
-  let editorView: EditorView | undefined = undefined;
+  let editorView: EditorView | undefined;
 
   const setContent = (content: string) => {
     if (editorView === undefined) {
@@ -104,27 +104,18 @@ export function useHttpEditor(
 
   useEventListener(document, "keydown", onKeyDown, { capture: true });
 
-  onMounted(() => {
-    initialize();
-  });
+  onMounted(initialize);
 
-  watch(
-    () => source.value.raw,
-    (next) => {
-      setContent(next);
-    },
-  );
+  watch(() => source.value.raw, setContent);
 
-  watch(lifecycle.getPageEnterCounter(), () => {
+  watch(pageEnterCounter, () => {
     editorView = undefined;
     setTimeout(() => {
       if (root.value === undefined) {
         return;
       }
 
-      Array.from(root.value.children).forEach((child) => {
-        child.remove();
-      });
+      root.value.replaceChildren();
       initialize();
     }, 0);
   });

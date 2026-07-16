@@ -9,10 +9,6 @@ import WordlistsTable from "./WordlistsTable.vue";
 import PageHeader from "@/shared/components/PageHeader.vue";
 
 const createDialogVisible = ref(false);
-
-const onCreated = () => {
-  createDialogVisible.value = false;
-};
 </script>
 
 <template>
@@ -51,7 +47,7 @@ const onCreated = () => {
 
     <CreateWordlistDialog
       v-model:visible="createDialogVisible"
-      @created="onCreated"
+      @created="createDialogVisible = false"
     />
   </div>
 </template>

@@ -1,16 +1,9 @@
-import { ref } from "vue";
+import { readonly, ref } from "vue";
 
 const pageEnterCounter = ref(0);
 
-export const usePageLifecycle = () => {
-  const triggerPageEnter = () => {
-    pageEnterCounter.value++;
-  };
-
-  const getPageEnterCounter = () => pageEnterCounter;
-
-  return {
-    triggerPageEnter,
-    getPageEnterCounter,
-  };
+export const triggerPageEnter = () => {
+  pageEnterCounter.value += 1;
 };
+
+export const usePageEnterCounter = () => readonly(pageEnterCounter);
