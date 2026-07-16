@@ -8,7 +8,7 @@ import { useActionResult } from "@/shared/composables/useActionResult";
 
 const settingsStore = useSettingsStore();
 const { showResult } = useActionResult();
-const { data, saving } = storeToRefs(settingsStore);
+const { data } = storeToRefs(settingsStore);
 
 const updateSettings = async (updates: Partial<Settings>) => {
   showResult(await settingsStore.update(updates), {
@@ -45,7 +45,6 @@ const numberPt = {
         <InputNumber
           :model-value="data.delay"
           :min="0"
-          :disabled="saving"
           :pt="numberPt"
           @update:model-value="(value) => setField('delay', value ?? 0)"
         />
@@ -63,7 +62,6 @@ const numberPt = {
         <InputNumber
           :model-value="data.requestTimeoutSeconds"
           :min="1"
-          :disabled="saving"
           :pt="numberPt"
           @update:model-value="
             (value) => setField('requestTimeoutSeconds', value ?? 1)
@@ -83,7 +81,6 @@ const numberPt = {
         <InputNumber
           :model-value="data.scanTimeoutSeconds"
           :min="1"
-          :disabled="saving"
           :pt="numberPt"
           @update:model-value="
             (value) => setField('scanTimeoutSeconds', value ?? undefined)
@@ -102,7 +99,6 @@ const numberPt = {
         <InputNumber
           :model-value="data.learnRequestsCount"
           :min="3"
-          :disabled="saving"
           :pt="numberPt"
           @update:model-value="
             (value) => setField('learnRequestsCount', value ?? 3)

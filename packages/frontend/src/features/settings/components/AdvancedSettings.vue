@@ -10,7 +10,7 @@ import { useActionResult } from "@/shared/composables/useActionResult";
 
 const settingsStore = useSettingsStore();
 const { showResult } = useActionResult();
-const { data, saving } = storeToRefs(settingsStore);
+const { data } = storeToRefs(settingsStore);
 
 const updateSettings = async (updates: Partial<Settings>) => {
   showResult(await settingsStore.update(updates), {
@@ -128,7 +128,6 @@ const numberPt = {
         </div>
         <ToggleSwitch
           :model-value="data.autoDetectMaxSize"
-          :disabled="saving"
           @update:model-value="onAutoDetectMaxSize"
         />
       </div>
@@ -144,7 +143,6 @@ const numberPt = {
           <InputNumber
             :model-value="data.maxQuerySize ?? 0"
             :min="0"
-            :disabled="saving"
             :pt="numberPt"
             @update:model-value="
               (value) => setMaxSize('maxQuerySize', value ?? undefined)
@@ -158,7 +156,6 @@ const numberPt = {
           <InputNumber
             :model-value="data.maxHeaderSize ?? 0"
             :min="0"
-            :disabled="saving"
             :pt="numberPt"
             @update:model-value="
               (value) => setMaxSize('maxHeaderSize', value ?? undefined)
@@ -172,7 +169,6 @@ const numberPt = {
           <InputNumber
             :model-value="data.maxBodySize ?? 0"
             :min="0"
-            :disabled="saving"
             :pt="numberPt"
             @update:model-value="
               (value) => setMaxSize('maxBodySize', value ?? undefined)
@@ -192,7 +188,6 @@ const numberPt = {
         </div>
         <ToggleSwitch
           :model-value="getBool(toggle.field)"
-          :disabled="saving"
           @update:model-value="(value) => setBool(toggle.field, value)"
         />
       </div>
@@ -215,7 +210,6 @@ const numberPt = {
         filter
         class="w-full"
         placeholder="Select anomaly types to ignore"
-        :disabled="saving"
         @update:model-value="setIgnoreAnomalyTypes"
       />
     </div>
