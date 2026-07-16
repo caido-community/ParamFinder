@@ -53,6 +53,7 @@ describe("buildMiningConfig", () => {
     expect(
       buildMiningConfig(settings, "headers", {
         customValue: "marker",
+        customValueType: "string",
         jsonBodyPath: "$.data.user",
         cacheBusterParameter: true,
         maxParametersAmount: 12,
@@ -63,6 +64,15 @@ describe("buildMiningConfig", () => {
       jsonBodyPath: "$.data.user",
       addCacheBusterParameter: true,
       maxParametersAmount: 12,
+    });
+  });
+
+  it("uses the datatype selected in advanced options", () => {
+    expect(
+      buildMiningConfig(settings, "body", { customValueType: "integer" }),
+    ).toMatchObject({
+      attackType: "body",
+      customValueType: "integer",
     });
   });
 });

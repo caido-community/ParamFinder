@@ -6,6 +6,7 @@ import {
   type AnomalyType as EngineAnomalyTypeValue,
   AttackType as EngineAttackType,
   type AttackType as EngineAttackTypeValue,
+  type ParameterValueType as EngineParameterValueType,
   EnginePhase,
   type EnginePhase as EnginePhaseValue,
   type EngineRequest,
@@ -29,6 +30,7 @@ export const MiningSessionPhase = EnginePhase;
 export type MiningSessionPhase = EnginePhaseValue;
 export const MiningSessionState = EngineState;
 export type MiningSessionState = EngineStateValue;
+export type ParameterValueType = EngineParameterValueType;
 export type {
   Anomaly,
   EngineRequest as Request,

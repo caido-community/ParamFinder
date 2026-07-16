@@ -19,7 +19,7 @@ export function buildMiningConfig(
     addCacheBusterParameter:
       options.cacheBusterParameter ?? settings.addCacheBusterParameter,
     customValue: options.customValue,
-    customValueType: "string",
+    customValueType: options.customValueType ?? "string",
     jsonBodyPath: options.jsonBodyPath,
     maxParametersAmount: options.maxParametersAmount,
   });

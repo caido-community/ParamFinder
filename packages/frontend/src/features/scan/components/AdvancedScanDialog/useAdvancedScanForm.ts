@@ -3,7 +3,7 @@ import {
   parseJsonBodyPath,
 } from "@paramfinder/engine";
 import { useLocalStorage } from "@vueuse/core";
-import type { AttackType } from "shared";
+import type { AttackType, ParameterValueType } from "shared";
 import { computed, nextTick, ref, watch } from "vue";
 
 import {
@@ -19,6 +19,7 @@ export function useAdvancedScanForm() {
   const cache = useLocalStorage<AdvancedScanCache>(advancedScanCacheKey, {});
   const attackType = ref<AttackType>("query");
   const customValue = ref("");
+  const customValueType = ref<ParameterValueType>("string");
   const jsonBodyPath = ref("");
   const cacheBusterParameter = ref(false);
   const maxParametersAmount = ref<number | null | undefined>(undefined);
@@ -48,6 +49,7 @@ export function useAdvancedScanForm() {
   const currentValues = () => ({
     attackType: attackType.value,
     customValue: customValue.value,
+    customValueType: customValueType.value,
     jsonBodyPath: jsonBodyPath.value,
     cacheBusterParameter: cacheBusterParameter.value,
     maxParametersAmount: maxParametersAmount.value,
@@ -60,6 +62,7 @@ export function useAdvancedScanForm() {
     suppressPersist = true;
     attackType.value = values.attackType;
     customValue.value = values.customValue;
+    customValueType.value = values.customValueType;
     jsonBodyPath.value = values.jsonBodyPath;
     cacheBusterParameter.value = values.cacheBusterParameter;
     maxParametersAmount.value = values.maxParametersAmount;
@@ -91,6 +94,7 @@ export function useAdvancedScanForm() {
     [
       attackType,
       customValue,
+      customValueType,
       jsonBodyPath,
       cacheBusterParameter,
       maxParametersAmount,
@@ -111,6 +115,7 @@ export function useAdvancedScanForm() {
   return {
     attackType,
     customValue,
+    customValueType,
     jsonBodyPath,
     cacheBusterParameter,
     maxParametersAmount,

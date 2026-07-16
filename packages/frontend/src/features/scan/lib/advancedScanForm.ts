@@ -8,11 +8,13 @@ export const advancedScanCacheKey = "paramfinder.advanced-scan.cache";
 export type AdvancedScanFormValues = Omit<
   AdvancedScanOptions,
   | "customValue"
+  | "customValueType"
   | "jsonBodyPath"
   | "cacheBusterParameter"
   | "maxParametersAmount"
 > & {
   customValue: string;
+  customValueType: NonNullable<AdvancedScanOptions["customValueType"]>;
   jsonBodyPath: string;
   cacheBusterParameter: boolean;
   maxParametersAmount: number | null | undefined;
@@ -27,6 +29,7 @@ export function createAdvancedScanFormValues(
   return {
     attackType: request.initialAttackType ?? cache.attackType ?? "query",
     customValue: cache.customValue ?? "",
+    customValueType: cache.customValueType ?? "string",
     jsonBodyPath: cache.jsonBodyPath ?? "",
     cacheBusterParameter: cache.cacheBusterParameter ?? false,
     maxParametersAmount: cache.maxParametersAmount,
@@ -38,7 +41,11 @@ export function createAdvancedScanOptions(
 ): AdvancedScanOptions {
   return {
     attackType: values.attackType,
-    customValue: values.customValue !== "" ? values.customValue : undefined,
+    customValue:
+      values.customValueType === "string" && values.customValue !== ""
+        ? values.customValue
+        : undefined,
+    customValueType: values.customValueType,
     jsonBodyPath:
       values.attackType === "body" && values.jsonBodyPath !== ""
         ? values.jsonBodyPath

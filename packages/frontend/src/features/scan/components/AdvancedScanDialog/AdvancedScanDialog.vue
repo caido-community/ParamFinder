@@ -19,6 +19,7 @@ const store = useScanDialogStore();
 const {
   attackType,
   customValue,
+  customValueType,
   jsonBodyPath,
   cacheBusterParameter,
   maxParametersAmount,
@@ -34,6 +35,11 @@ const {
 } = useAdvancedScanForm();
 
 const customValueInput = ref<{ $el: HTMLInputElement } | undefined>(undefined);
+
+const parameterValueTypeOptions = [
+  { label: "String", value: "string" },
+  { label: "Integer", value: "integer" },
+] as const;
 
 const visible = computed({
   get: () => store.request !== undefined,
@@ -52,7 +58,9 @@ watch(
     }
 
     await reset(next);
-    customValueInput.value?.$el.focus();
+    if (customValueType.value === "string") {
+      customValueInput.value?.$el.focus();
+    }
   },
 );
 
@@ -92,6 +100,30 @@ const submit = () => {
         <label
           class="flex items-center gap-1.5 text-xs font-medium text-surface-200"
         >
+          Parameter datatype
+          <i
+            v-tooltip.top="
+              'Integer values are generated as numbers and sent without quotes in JSON bodies.'
+            "
+            class="fas fa-circle-question text-[11px] text-surface-500 cursor-help"
+          />
+        </label>
+        <SelectButton
+          v-model="customValueType"
+          :options="parameterValueTypeOptions"
+          option-label="label"
+          option-value="value"
+          :allow-empty="false"
+          :pt="{
+            root: { class: 'flex w-full [&>*]:flex-1 [&>*]:justify-center' },
+          }"
+        />
+      </div>
+
+      <div class="flex flex-col gap-1.5">
+        <label
+          class="flex items-center gap-1.5 text-xs font-medium text-surface-200"
+        >
           Custom parameter value
           <i
             v-tooltip.top="
@@ -103,7 +135,12 @@ const submit = () => {
         <InputText
           ref="customValueInput"
           v-model="customValue"
-          placeholder="Optional custom value"
+          :disabled="customValueType === 'integer'"
+          :placeholder="
+            customValueType === 'integer'
+              ? 'Unavailable for generated integers'
+              : 'Optional custom value'
+          "
           class="w-full text-sm"
           autocomplete="off"
           @keyup.enter="submit"

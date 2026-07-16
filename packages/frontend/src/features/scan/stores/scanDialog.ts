@@ -1,10 +1,11 @@
 import { defineStore } from "pinia";
-import type { AttackType } from "shared";
+import type { AttackType, ParameterValueType } from "shared";
 import { ref } from "vue";
 
 export type AdvancedScanOptions = {
   attackType: AttackType;
   customValue?: string;
+  customValueType?: ParameterValueType;
   jsonBodyPath?: string;
   cacheBusterParameter?: boolean;
   maxParametersAmount?: number;

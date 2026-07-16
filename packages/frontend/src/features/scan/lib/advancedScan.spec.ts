@@ -52,6 +52,7 @@ describe("advanced scan form helpers", () => {
       createAdvancedScanOptions({
         attackType: "headers",
         customValue: "x",
+        customValueType: "string",
         jsonBodyPath: "$.ignored",
         cacheBusterParameter: true,
         maxParametersAmount: undefined,
@@ -59,6 +60,7 @@ describe("advanced scan form helpers", () => {
     ).toEqual({
       attackType: "headers",
       customValue: "x",
+      customValueType: "string",
       jsonBodyPath: undefined,
       cacheBusterParameter: true,
       maxParametersAmount: undefined,
@@ -70,6 +72,7 @@ describe("advanced scan form helpers", () => {
       createAdvancedScanOptions({
         attackType: "body",
         customValue: "",
+        customValueType: "string",
         jsonBodyPath: "$.user",
         cacheBusterParameter: true,
         maxParametersAmount: null,
@@ -77,9 +80,26 @@ describe("advanced scan form helpers", () => {
     ).toEqual({
       attackType: "body",
       customValue: undefined,
+      customValueType: "string",
       jsonBodyPath: "$.user",
       cacheBusterParameter: undefined,
       maxParametersAmount: undefined,
+    });
+  });
+
+  it("omits a custom value for the integer datatype", () => {
+    expect(
+      createAdvancedScanOptions({
+        attackType: "body",
+        customValue: "cached-prefix",
+        customValueType: "integer",
+        jsonBodyPath: "",
+        cacheBusterParameter: false,
+        maxParametersAmount: undefined,
+      }),
+    ).toMatchObject({
+      customValue: undefined,
+      customValueType: "integer",
     });
   });
 });
