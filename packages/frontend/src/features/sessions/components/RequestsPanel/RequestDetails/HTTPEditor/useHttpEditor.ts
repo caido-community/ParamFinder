@@ -88,7 +88,7 @@ export function useHttpEditor(
       event.key.toLowerCase() !== "r" ||
       (!event.metaKey && !event.ctrlKey) ||
       event.altKey ||
-      event.shiftKey ||
+      !event.shiftKey ||
       event.repeat ||
       root.value === undefined ||
       document.activeElement === null ||
