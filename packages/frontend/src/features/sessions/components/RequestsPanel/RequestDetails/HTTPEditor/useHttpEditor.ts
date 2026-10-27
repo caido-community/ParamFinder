@@ -41,16 +41,24 @@ export function useHttpEditor(
   };
 
   const initialize = () => {
-    if (root.value === undefined) {
+    const el = root.value;
+    if (!el) {
       return;
     }
 
+    // Caido's editor element only creates its view once connected, and remounts with a fresh empty view after the page is re-attached.
+    if (!el.isConnected) {
+      requestAnimationFrame(initialize);
+      return;
+    }
+
+    el.replaceChildren();
     const currentSource = source.value;
     const editor =
       currentSource.type === "request"
         ? sdk.ui.httpRequestEditor()
         : sdk.ui.httpResponseEditor();
-    root.value.appendChild(editor.getElement());
+    el.appendChild(editor.getElement());
     editorView = editor.getEditorView();
     setContent(currentSource.raw);
   };
@@ -110,14 +118,7 @@ export function useHttpEditor(
 
   watch(pageEnterCounter, () => {
     editorView = undefined;
-    setTimeout(() => {
-      if (root.value === undefined) {
-        return;
-      }
-
-      root.value.replaceChildren();
-      initialize();
-    }, 0);
+    initialize();
   });
 
   return { contextMenu, menuItems, onContextMenu };
