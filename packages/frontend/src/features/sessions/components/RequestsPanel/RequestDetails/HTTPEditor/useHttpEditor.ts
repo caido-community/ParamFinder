@@ -1,8 +1,7 @@
 import type { EditorView } from "@codemirror/view";
-import { useEventListener } from "@vueuse/core";
-import { onMounted, type Ref, ref, watch } from "vue";
+import { useEventListener, useIntersectionObserver } from "@vueuse/core";
+import { type Ref, ref, watch } from "vue";
 
-import { usePageEnterCounter } from "@/plugins/lifecycle";
 import { useSDK } from "@/plugins/sdk";
 import { toCrlf } from "@/shared/utils/request";
 
@@ -25,7 +24,6 @@ export function useHttpEditor(
   source: Readonly<Ref<HttpEditorSource>>,
 ) {
   const sdk = useSDK();
-  const pageEnterCounter = usePageEnterCounter();
 
   const contextMenu = ref();
   let editorView: EditorView | undefined;
@@ -43,12 +41,6 @@ export function useHttpEditor(
   const initialize = () => {
     const el = root.value;
     if (!el) {
-      return;
-    }
-
-    // Caido's editor element only creates its view once connected, and remounts with a fresh empty view after the page is re-attached.
-    if (!el.isConnected) {
-      requestAnimationFrame(initialize);
       return;
     }
 
@@ -112,14 +104,14 @@ export function useHttpEditor(
 
   useEventListener(document, "keydown", onKeyDown, { capture: true });
 
-  onMounted(initialize);
+  // Caido's editor element has no view while detached and remounts with a fresh empty one when the page is re-attached.
+  useIntersectionObserver(root, ([entry]) => {
+    if (entry?.isIntersecting && editorView?.dom.isConnected !== true) {
+      initialize();
+    }
+  });
 
   watch(() => source.value.raw, setContent);
-
-  watch(pageEnterCounter, () => {
-    editorView = undefined;
-    initialize();
-  });
 
   return { contextMenu, menuItems, onContextMenu };
 }

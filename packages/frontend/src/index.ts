@@ -9,7 +9,6 @@ import { createApp, watch } from "vue";
 import App from "@/app/App.vue";
 import { runAdvancedScan, runScan } from "@/commands/scan";
 import { useSessionsStore } from "@/features/sessions/stores/sessions.store";
-import { triggerPageEnter } from "@/plugins/lifecycle";
 import { SDKPlugin } from "@/plugins/sdk";
 import { attackTypes } from "@/shared/constants/attackTypes";
 import { toErrorMessage } from "@/shared/utils/backend";
@@ -170,10 +169,7 @@ export const init = (sdk: FrontendSDK) => {
 
   sdk.navigation.addPage("/paramfinder", {
     body: root,
-    onEnter: () => {
-      clearSidebarCount();
-      triggerPageEnter();
-    },
+    onEnter: clearSidebarCount,
   });
 
   sdk.projects.onCurrentProjectChange((event) => {
