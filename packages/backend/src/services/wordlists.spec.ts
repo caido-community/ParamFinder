@@ -156,6 +156,17 @@ describe("WordlistsService", () => {
     ]);
   });
 
+  it("keeps an empty attack type list and skips that wordlist in scans", async () => {
+    const { service } = await createService();
+    const wordlist = await service.importWordlist("alpha\n", "first.txt");
+    await service.setAttackTypes(wordlist.path, []);
+
+    await expect(service.getWordlists()).resolves.toMatchObject([
+      { path: wordlist.path, attackTypes: [] },
+    ]);
+    await expect(service.loadEnabledWords("query")).resolves.toEqual([]);
+  });
+
   it("does not remove an unregistered filesystem path", async () => {
     const { fs, service } = await createService();
 

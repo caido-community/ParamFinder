@@ -55,7 +55,7 @@ export function useHttpEditor(
     setContent(currentSource.raw);
   };
 
-  const sendToReplay = () => {
+  const sendToReplay = async () => {
     const currentSource = source.value;
     if (currentSource.type !== "request") {
       return;
@@ -63,11 +63,18 @@ export function useHttpEditor(
 
     const { host, port, isTls } = currentSource.connectionInfo;
     const current = editorView?.state.doc.toString() ?? currentSource.raw;
-    sdk.replay.createSession({
-      type: "Raw",
-      raw: toCrlf(current),
-      connectionInfo: { host, port, isTLS: isTls },
-    });
+    try {
+      await sdk.replay.createSession({
+        type: "Raw",
+        raw: toCrlf(current),
+        connectionInfo: { host, port, isTLS: isTls },
+      });
+    } catch (cause) {
+      sdk.window.showToast(
+        `Failed to send to Replay: ${cause instanceof Error ? cause.message : String(cause)}`,
+        { variant: "error" },
+      );
+    }
   };
 
   const menuItems = [

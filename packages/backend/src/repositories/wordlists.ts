@@ -167,9 +167,12 @@ function mapWordlist(row: WordlistRow): Wordlist {
 }
 
 function parseAttackTypes(value: string | null): AttackType[] {
-  const parsed = (value ?? "")
+  if (value === null) {
+    return [...DEFAULT_ATTACK_TYPES];
+  }
+  const parsed = value
     .split(",")
     .map((entry) => entry.trim())
     .filter((entry): entry is AttackType => ATTACK_TYPES.includes(entry));
-  return parsed.length > 0 ? [...new Set(parsed)] : [...DEFAULT_ATTACK_TYPES];
+  return [...new Set(parsed)];
 }

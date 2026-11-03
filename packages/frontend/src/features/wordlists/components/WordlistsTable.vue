@@ -6,6 +6,7 @@ import Column from "primevue/column";
 import DataTable from "primevue/datatable";
 import SelectButton from "primevue/selectbutton";
 import type { AttackType, Wordlist } from "shared";
+import { ref } from "vue";
 
 import { useWordlistsStore } from "../stores/store";
 
@@ -22,6 +23,7 @@ const wordlistsStore = useWordlistsStore();
 const { data: wordlists, loading, mutating } = storeToRefs(wordlistsStore);
 const { showResult } = useActionResult();
 const confirm = useConfirm();
+const fileInput = ref<HTMLInputElement>();
 
 const displayName = (path: string) => path.replace(/^.*[\\/]/, "");
 
@@ -47,6 +49,19 @@ const remove = (wordlist: Wordlist) => {
         errorPrefix: "Failed to remove wordlist",
       });
     },
+  });
+};
+
+const importFile = async (event: Event) => {
+  const input = event.target as HTMLInputElement;
+  const file = input.files?.[0];
+  input.value = "";
+  if (file === undefined) {
+    return;
+  }
+
+  showResult(await wordlistsStore.importText(file.name, await file.text()), {
+    errorPrefix: "Failed to import wordlist",
   });
 };
 
@@ -83,6 +98,22 @@ const clearAll = () => {
           severity="secondary"
           outlined
           @click="emit('create')"
+        />
+        <Button
+          label="Import File"
+          icon="fas fa-file-import"
+          size="small"
+          severity="secondary"
+          outlined
+          :disabled="mutating"
+          @click="fileInput?.click()"
+        />
+        <input
+          ref="fileInput"
+          type="file"
+          accept=".txt,text/plain"
+          class="hidden"
+          @change="importFile"
         />
         <Button
           label="Clear All"
@@ -154,7 +185,6 @@ const clearAll = () => {
             size="small"
             severity="secondary"
             text
-            :loading="mutating"
             :disabled="mutating"
             @click="remove(data)"
           />
