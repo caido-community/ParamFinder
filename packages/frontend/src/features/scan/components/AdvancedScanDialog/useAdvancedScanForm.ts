@@ -25,7 +25,6 @@ export function useAdvancedScanForm() {
   const bodyState = ref(evaluateJsonBody());
   const treeOpen = ref(false);
 
-  const canPickPath = computed(() => bodyState.value.kind === "valid");
   const jsonPathError = computed(() => {
     if (attackType.value !== "body" || jsonBodyPath.value.trim() === "") {
       return undefined;
@@ -60,10 +59,12 @@ export function useAdvancedScanForm() {
     suppressPersist = true;
     attackType.value = values.attackType;
     customValue.value = values.customValue;
-    jsonBodyPath.value = values.jsonBodyPath;
+    bodyState.value = evaluateJsonBody(request.jsonBody);
+    // The path field is hidden for non-JSON bodies, so a cached path would block submit invisibly.
+    jsonBodyPath.value =
+      bodyState.value.kind === "valid" ? values.jsonBodyPath : "";
     cacheBusterParameter.value = values.cacheBusterParameter;
     maxParametersAmount.value = values.maxParametersAmount;
-    bodyState.value = evaluateJsonBody(request.jsonBody);
     treeOpen.value = false;
     await nextTick();
     suppressPersist = false;
@@ -73,13 +74,6 @@ export function useAdvancedScanForm() {
     const options = createAdvancedScanOptions(currentValues());
     cache.value = options;
     return options;
-  };
-
-  const toggleTree = () => {
-    if (!canPickPath.value) {
-      return;
-    }
-    treeOpen.value = !treeOpen.value;
   };
 
   const selectTreePath = (path: string) => {
@@ -116,12 +110,10 @@ export function useAdvancedScanForm() {
     maxParametersAmount,
     bodyState,
     treeOpen,
-    canPickPath,
     jsonPathError,
     canSubmit,
     reset,
     submitValue,
-    toggleTree,
     selectTreePath,
   };
 }
