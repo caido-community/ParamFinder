@@ -60,7 +60,7 @@ const importFile = async (event: Event) => {
     return;
   }
 
-  showResult(await wordlistsStore.importText(file.name, await file.text()), {
+  showResult(await wordlistsStore.importFile(file), {
     errorPrefix: "Failed to import wordlist",
   });
 };

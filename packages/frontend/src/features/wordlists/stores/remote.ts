@@ -3,7 +3,7 @@ import { type ApiResult, error, ok } from "shared";
 import { toErrorMessage } from "@/shared/utils/backend";
 
 const REMOTE_TIMEOUT_MS = 30_000;
-const MAX_REMOTE_BYTES = 10 * 1024 * 1024;
+export const MAX_WORDLIST_BYTES = 10 * 1024 * 1024;
 
 export async function fetchRemoteWordlist(
   url: string,
@@ -18,13 +18,13 @@ export async function fetchRemoteWordlist(
     }
 
     const declaredSize = Number(response.headers.get("content-length") ?? 0);
-    if (declaredSize > MAX_REMOTE_BYTES) {
+    if (declaredSize > MAX_WORDLIST_BYTES) {
       return error("Remote wordlist exceeds the 10 MiB limit.", "VALIDATION");
     }
 
     if (response.body === null) {
       const data = await response.arrayBuffer();
-      if (data.byteLength > MAX_REMOTE_BYTES) {
+      if (data.byteLength > MAX_WORDLIST_BYTES) {
         return error("Remote wordlist exceeds the 10 MiB limit.", "VALIDATION");
       }
       return ok(new TextDecoder().decode(data));
@@ -41,7 +41,7 @@ export async function fetchRemoteWordlist(
       }
 
       bytes += chunk.value.byteLength;
-      if (bytes > MAX_REMOTE_BYTES) {
+      if (bytes > MAX_WORDLIST_BYTES) {
         await reader.cancel();
         return error("Remote wordlist exceeds the 10 MiB limit.", "VALIDATION");
       }

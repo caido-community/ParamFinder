@@ -8,7 +8,7 @@ import {
 } from "shared";
 import { ref } from "vue";
 
-import { fetchRemoteWordlist } from "./remote";
+import { fetchRemoteWordlist, MAX_WORDLIST_BYTES } from "./remote";
 
 import { useSDK } from "@/plugins/sdk";
 import { toErrorMessage } from "@/shared/utils/backend";
@@ -68,6 +68,13 @@ export const useWordlistsStore = defineStore("wordlists", () => {
   const importText = (filename: string, content: string) =>
     mutate(() => sdk.backend.importWordlist(content, filename));
 
+  const importFile = (file: File) =>
+    mutate(async () =>
+      file.size > MAX_WORDLIST_BYTES
+        ? error("Wordlist exceeds the 10 MiB limit.", "VALIDATION")
+        : sdk.backend.importWordlist(await file.text(), file.name),
+    );
+
   const importRemote = (filename: string, url: string) =>
     mutate(async () => {
       const download = await fetchRemoteWordlist(url);
@@ -97,6 +104,7 @@ export const useWordlistsStore = defineStore("wordlists", () => {
     mutating,
     load,
     importText,
+    importFile,
     importRemote,
     toggle,
     updateAttackTypes,
