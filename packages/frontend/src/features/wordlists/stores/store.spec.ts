@@ -76,4 +76,20 @@ describe("wordlist mutations", () => {
     expect(text).not.toHaveBeenCalled();
     expect(importWordlist).not.toHaveBeenCalled();
   });
+
+  it("imports a file within the size limit", async () => {
+    const importWordlist = vi.fn(async () =>
+      ok<Wordlist>({ path: "/small.txt", enabled: true, attackTypes: [] }),
+    );
+    const getWordlists = vi.fn(async () => ok<Wordlist[]>([]));
+    sdkHolder.current = {
+      backend: { importWordlist, getWordlists },
+    } as unknown as FrontendSDK;
+    const store = useWordlistsStore();
+
+    await expect(
+      store.importFile(new File(["alpha"], "small.txt")),
+    ).resolves.toEqual(ok(undefined));
+    expect(importWordlist).toHaveBeenCalledWith("alpha", "small.txt");
+  });
 });
