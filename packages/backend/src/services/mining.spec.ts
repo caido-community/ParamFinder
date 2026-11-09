@@ -298,6 +298,21 @@ describe("MiningService", () => {
     expect(testState.runDiscoveryScan).not.toHaveBeenCalled();
   });
 
+  it("rejects timeouts longer than a timer can hold before creating a session", async () => {
+    await expect(
+      service.start(ref.projectId, createRequest(), {
+        ...createConfig(),
+        scanTimeoutSeconds: 30 * 24 * 60 * 60,
+      }),
+    ).resolves.toMatchObject({
+      success: false,
+      error: { code: "VALIDATION" },
+    });
+
+    expect(sessions.createNextSession).not.toHaveBeenCalled();
+    expect(testState.runDiscoveryScan).not.toHaveBeenCalled();
+  });
+
   it("rejects an unsupported body before creating a session", async () => {
     const request = {
       ...createRequest(),

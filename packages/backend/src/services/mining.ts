@@ -258,12 +258,7 @@ export class MiningService {
       return terminalPersistenceError();
     }
 
-    if (
-      running.state !== EngineState.Pending &&
-      running.state !== EngineState.Learning &&
-      running.state !== EngineState.Running &&
-      running.state !== EngineState.Paused
-    ) {
+    if (this.events.isTerminal(running.state)) {
       return error(`Cannot pause a ${running.state} session.`, "CONFLICT");
     }
 

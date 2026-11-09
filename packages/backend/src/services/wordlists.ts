@@ -1,9 +1,10 @@
 import type { AttackType, Wordlist } from "shared";
 
-import type { WordlistsRepository } from "../repositories";
+import {
+  DEFAULT_ATTACK_TYPES,
+  type WordlistsRepository,
+} from "../repositories";
 import { SerialTaskQueue } from "../util";
-
-const DEFAULT_ATTACK_TYPES: AttackType[] = ["body", "headers", "query"];
 
 export class WordlistNotFoundError extends Error {}
 

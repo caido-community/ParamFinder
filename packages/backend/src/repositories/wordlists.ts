@@ -1,11 +1,10 @@
 import { access, readFile, rm, writeFile } from "fs/promises";
 import path from "path";
 
-import type { AttackType, Wordlist } from "shared";
+import { type AttackType, attackTypeSchema, type Wordlist } from "shared";
 import type { Database } from "sqlite";
 
-const DEFAULT_ATTACK_TYPES: AttackType[] = ["body", "headers", "query"];
-const ATTACK_TYPES: readonly string[] = ["query", "body", "headers"];
+export const DEFAULT_ATTACK_TYPES: AttackType[] = ["body", "headers", "query"];
 const MAX_FILENAME_ATTEMPTS = 100;
 
 type WordlistRow = {
@@ -169,7 +168,6 @@ function parseAttackTypes(value: string | null): AttackType[] {
   }
   const parsed = value
     .split(",")
-    .map((entry) => entry.trim())
-    .filter((entry): entry is AttackType => ATTACK_TYPES.includes(entry));
+    .flatMap((entry) => attackTypeSchema.safeParse(entry.trim()).data ?? []);
   return [...new Set(parsed)];
 }
