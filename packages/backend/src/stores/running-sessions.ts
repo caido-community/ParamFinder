@@ -48,7 +48,7 @@ export class RunningSessionsStore {
     return this.sessions.get(key(ref));
   }
 
-  set(session: RunningSession) {
+  set(session: RunningSession): void {
     this.sessions.set(key(session.ref), session);
   }
 
@@ -60,11 +60,11 @@ export class RunningSessionsStore {
     return this.get(session.ref) === session;
   }
 
-  delete(session: RunningSession) {
+  delete(session: RunningSession): void {
     if (this.isCurrent(session)) this.sessions.delete(key(session.ref));
   }
 
-  tombstone(refs: SessionRef[]) {
+  tombstone(refs: SessionRef[]): void {
     for (const ref of refs) {
       const session = this.get(ref);
       if (session === undefined) continue;

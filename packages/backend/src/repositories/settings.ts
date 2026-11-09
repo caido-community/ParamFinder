@@ -35,7 +35,7 @@ export class SettingsRepository {
     return JSON.parse(contents) as unknown;
   }
 
-  async write(settings: Settings) {
+  async write(settings: Settings): Promise<void> {
     const temporaryPath = `${this.settingsPath}.tmp`;
 
     try {
@@ -47,7 +47,7 @@ export class SettingsRepository {
     }
   }
 
-  async quarantine() {
+  async quarantine(): Promise<void> {
     await this.fs.rename(
       this.settingsPath,
       `${this.settingsPath}.quarantine-${Date.now()}`,

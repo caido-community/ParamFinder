@@ -312,7 +312,7 @@ export class MiningService {
     return results.find((result) => !result.success) ?? ok(undefined);
   }
 
-  async deleteSessions(refs: SessionRef[]) {
+  async deleteSessions(refs: SessionRef[]): Promise<void> {
     for (
       let start = 0;
       start < refs.length;

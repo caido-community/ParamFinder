@@ -4,11 +4,11 @@ export class RunControl {
   private paused = false;
   private waiters = new Set<() => void>();
 
-  public pause() {
+  public pause(): void {
     this.paused = true;
   }
 
-  public resume() {
+  public resume(): void {
     if (!this.paused) {
       return;
     }
@@ -23,7 +23,7 @@ export class RunControl {
     return this.paused;
   }
 
-  public async waitIfPaused(signal?: AbortSignal) {
+  public async waitIfPaused(signal?: AbortSignal): Promise<void> {
     throwIfAborted(signal);
 
     if (!this.paused) {

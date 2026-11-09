@@ -42,7 +42,7 @@ export class MiningEvents {
     private readonly runningSessions: RunningSessionsStore,
   ) {}
 
-  publish(projectId: string, revision: number, changes: SessionChange[]) {
+  publish(projectId: string, revision: number, changes: SessionChange[]): void {
     this.sdk.api.send("paramfinder:session_change", {
       projectId,
       revision,
@@ -54,7 +54,7 @@ export class MiningEvents {
     running: RunningSession,
     config: ParamMinerConfig,
     event: DiscoveryEvent,
-  ) {
+  ): void {
     if (!this.runningSessions.isCurrent(running) || !running.acceptingEvents) {
       return;
     }
@@ -75,7 +75,7 @@ export class MiningEvents {
       });
   }
 
-  async drain(running: RunningSession) {
+  async drain(running: RunningSession): Promise<void> {
     await running.eventChain;
   }
 
@@ -137,7 +137,10 @@ export class MiningEvents {
     return undefined;
   }
 
-  finalize(running: RunningSession, lifecycle: TerminalSessionLifecycle) {
+  finalize(
+    running: RunningSession,
+    lifecycle: TerminalSessionLifecycle,
+  ): Promise<void> {
     const completion = this.persistFinalState(running, lifecycle);
     running.terminalPersistence = { kind: "persisting", completion };
 
@@ -172,7 +175,10 @@ export class MiningEvents {
     }
   }
 
-  async finalizeStartupFailure(running: RunningSession, cause: unknown) {
+  async finalizeStartupFailure(
+    running: RunningSession,
+    cause: unknown,
+  ): Promise<void> {
     if (!this.beginFinalization(running)) {
       return;
     }

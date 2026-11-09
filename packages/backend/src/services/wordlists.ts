@@ -14,7 +14,7 @@ export class WordlistsService {
 
   constructor(private readonly repository: WordlistsRepository) {}
 
-  async initialize() {
+  async initialize(): Promise<void> {
     await this.queue.run(async () => {
       if (this.initialized) {
         return;
@@ -56,7 +56,7 @@ export class WordlistsService {
     });
   }
 
-  async deleteWordlist(filePath: string) {
+  async deleteWordlist(filePath: string): Promise<void> {
     await this.queue.run(async () => {
       this.assertInitialized();
 
@@ -72,7 +72,7 @@ export class WordlistsService {
     });
   }
 
-  async clearWordlists() {
+  async clearWordlists(): Promise<void> {
     await this.queue.run(async () => {
       this.assertInitialized();
 
@@ -87,7 +87,7 @@ export class WordlistsService {
     });
   }
 
-  async setEnabled(filePath: string, enabled: boolean) {
+  async setEnabled(filePath: string, enabled: boolean): Promise<void> {
     await this.queue.run(async () => {
       this.assertInitialized();
 
@@ -95,7 +95,10 @@ export class WordlistsService {
     });
   }
 
-  async setAttackTypes(filePath: string, attackTypes: AttackType[]) {
+  async setAttackTypes(
+    filePath: string,
+    attackTypes: AttackType[],
+  ): Promise<void> {
     await this.queue.run(async () => {
       this.assertInitialized();
 

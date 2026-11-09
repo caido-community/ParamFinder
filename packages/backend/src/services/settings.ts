@@ -30,7 +30,7 @@ export class SettingsService {
 
   constructor(private readonly repository: SettingsRepository) {}
 
-  async initialize() {
+  async initialize(): Promise<void> {
     await this.queue.run(async () => {
       if (this.settings !== undefined) {
         return;

@@ -10,7 +10,7 @@ export class SerialTaskQueue {
     return result;
   }
 
-  async onIdle() {
+  async onIdle(): Promise<void> {
     await this.tail;
   }
 }
