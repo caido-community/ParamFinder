@@ -26,10 +26,10 @@ export type AutopilotResult =
   | { handled: true; nextMaxSize: number; hasAdjustedQuerySize: true }
   | { handled: false; nextMaxSize?: number; hasAdjustedQuerySize: boolean };
 
-export interface VerifiedAnomalyResult {
+export type VerifiedAnomalyResult = {
   anomaly: Anomaly;
   requestResponse: EngineRequestResponse;
-}
+};
 
 export function anomaliesMatch(left: Anomaly, right: Anomaly): boolean {
   if (left.type !== right.type) {

@@ -16,7 +16,7 @@ import {
 import { getUtf8ByteLength } from "./utils";
 import { isRecordObject } from "./value-guards";
 
-interface MutateRequestOptions {
+type MutateRequestOptions = {
   baseRequest: EngineRequest;
   attackType: AttackType;
   parameters: Parameter[];
@@ -26,26 +26,26 @@ interface MutateRequestOptions {
   jsonBodyPath?: string;
   addCacheBusterParameter?: boolean;
   cacheBusterValue?: string;
-}
+};
 
-interface MutationBudgetOptions {
+type MutationBudgetOptions = {
   baseRequest: EngineRequest;
   attackType: AttackType;
   parameters: Parameter[];
   maxSize?: number;
   customValueType?: ParameterValueType;
   jsonBodyPath?: string;
-}
+};
 
 type ValidateMutationTargetOptions = Pick<
   MutateRequestOptions,
   "baseRequest" | "attackType" | "customValueType" | "jsonBodyPath"
 >;
 
-interface RequestMutationMetadata {
+type RequestMutationMetadata = {
   bodyKind: InspectableBodyKind;
   multipartBoundary?: string;
-}
+};
 
 export function inspectRequest(
   baseRequest: EngineRequest,
@@ -86,9 +86,7 @@ export function mutateRequest(options: MutateRequestOptions): EngineRequest {
   return toEngineRequest(options.baseRequest, forge, options.context);
 }
 
-export function validateMutationTarget(
-  options: ValidateMutationTargetOptions,
-): void {
+export function validateMutationTarget(options: ValidateMutationTargetOptions) {
   mutateRequest({
     ...options,
     parameters: [{ name: "paramfinder-validation", value: "1" }],
@@ -136,7 +134,7 @@ export function wouldExceedMutationBudget(
   }
 }
 
-function applyQueryInjection(forge: HttpForge, parameters: Parameter[]): void {
+function applyQueryInjection(forge: HttpForge, parameters: Parameter[]) {
   parameters.forEach((parameter) => {
     forge.addQueryParam(parameter.name, parameter.value);
   });
@@ -149,7 +147,7 @@ function applyHeaderInjection(
     MutateRequestOptions,
     "addCacheBusterParameter" | "cacheBusterValue"
   >,
-): void {
+) {
   parameters.forEach((parameter) => {
     forge.setHeader(parameter.name, parameter.value);
   });
@@ -163,7 +161,7 @@ function applyBodyInjection(
   forge: HttpForge,
   parameters: Parameter[],
   options: Pick<MutateRequestOptions, "customValueType" | "jsonBodyPath">,
-): void {
+) {
   mutateBody(forge, parameters, options.customValueType, options.jsonBodyPath);
 }
 
@@ -172,7 +170,7 @@ function mutateBody(
   parameters: Parameter[],
   customValueType?: ParameterValueType,
   jsonBodyPath?: string,
-): void {
+) {
   const bodyKind = resolveBodyKind(forge, getContentType(forge));
   if (!isMutableBodyKind(bodyKind)) {
     throw new EngineError(
@@ -201,7 +199,7 @@ function mutateJsonBody(
   parameters: Parameter[],
   customValueType?: ParameterValueType,
   jsonBodyPath?: string,
-): void {
+) {
   const currentBody = forge.getBody() || "{}";
   let bodyObject: Record<string, unknown>;
 
@@ -261,7 +259,7 @@ function mutateJsonBody(
   forge.body(JSON.stringify(bodyObject));
 }
 
-function mutateMultipartBody(forge: HttpForge, parameters: Parameter[]): void {
+function mutateMultipartBody(forge: HttpForge, parameters: Parameter[]) {
   const contentType =
     forge.getHeader("Content-Type") ?? forge.getHeader("content-type");
   const boundary = extractMultipartBoundary(contentType);
@@ -299,7 +297,7 @@ function mutateMultipartBody(forge: HttpForge, parameters: Parameter[]): void {
   forge.body(body);
 }
 
-function updateContentLength(forge: HttpForge): void {
+function updateContentLength(forge: HttpForge) {
   const body = forge.getBody() ?? "";
   if (body.length === 0) {
     forge.removeHeader("Content-Length");
@@ -416,7 +414,7 @@ function defineJsonParameter(
   target: Record<string, unknown>,
   name: string,
   value: string | number,
-): void {
+) {
   Object.defineProperty(target, name, {
     configurable: true,
     enumerable: true,

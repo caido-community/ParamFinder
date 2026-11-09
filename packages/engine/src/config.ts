@@ -45,7 +45,7 @@ function assertMatchesSchema<T>(
   value: unknown,
   errorCode: EngineErrorCode,
   subject: string,
-): void {
+) {
   const result = schema.safeParse(value);
   if (!result.success) {
     throw fromZodError(errorCode, subject, result.error);

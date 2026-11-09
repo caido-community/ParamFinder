@@ -13,7 +13,7 @@ export class WordlistsService {
 
   constructor(private readonly repository: WordlistsRepository) {}
 
-  async initialize(): Promise<void> {
+  async initialize() {
     await this.queue.run(async () => {
       if (this.initialized) {
         return;
@@ -55,7 +55,7 @@ export class WordlistsService {
     });
   }
 
-  async deleteWordlist(filePath: string): Promise<void> {
+  async deleteWordlist(filePath: string) {
     await this.queue.run(async () => {
       this.assertInitialized();
 
@@ -71,7 +71,7 @@ export class WordlistsService {
     });
   }
 
-  async clearWordlists(): Promise<void> {
+  async clearWordlists() {
     await this.queue.run(async () => {
       this.assertInitialized();
 
@@ -86,7 +86,7 @@ export class WordlistsService {
     });
   }
 
-  async setEnabled(filePath: string, enabled: boolean): Promise<void> {
+  async setEnabled(filePath: string, enabled: boolean) {
     await this.queue.run(async () => {
       this.assertInitialized();
 
@@ -94,10 +94,7 @@ export class WordlistsService {
     });
   }
 
-  async setAttackTypes(
-    filePath: string,
-    attackTypes: AttackType[],
-  ): Promise<void> {
+  async setAttackTypes(filePath: string, attackTypes: AttackType[]) {
     await this.queue.run(async () => {
       this.assertInitialized();
 
@@ -123,7 +120,7 @@ export class WordlistsService {
     });
   }
 
-  private assertInitialized(): void {
+  private assertInitialized() {
     if (!this.initialized) {
       throw new Error("Wordlists service not initialized");
     }

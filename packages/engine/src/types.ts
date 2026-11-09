@@ -28,7 +28,7 @@ export type MutableBodyKind = (typeof MUTABLE_BODY_KINDS)[number];
 export type ParameterValueType = (typeof PARAMETER_VALUE_TYPES)[number];
 export type HeaderMap = Record<string, string[]>;
 
-export interface EngineRequest {
+export type EngineRequest = {
   id: string;
   host: string;
   port: number;
@@ -41,26 +41,26 @@ export interface EngineRequest {
   tls: boolean;
   raw: string;
   context: RequestContext;
-}
+};
 
-export interface EngineResponse {
+export type EngineResponse = {
   status: number;
   headers: HeaderMap;
   body: string;
   time: number;
   length: number;
   raw?: string;
-}
+};
 
-export interface EngineRequestResponse {
+export type EngineRequestResponse = {
   request: EngineRequest;
   response: EngineResponse;
-}
+};
 
-export interface Parameter {
+export type Parameter = {
   name: string;
   value: string;
-}
+};
 
 export const AnomalyType = {
   StatusCode: "status-code",
@@ -73,51 +73,51 @@ export const AnomalyType = {
 
 export type AnomalyType = (typeof AnomalyType)[keyof typeof AnomalyType];
 
-export interface StatusCodeAnomaly {
+export type StatusCodeAnomaly = {
   type: typeof AnomalyType.StatusCode;
   from: number;
   to: number;
-}
+};
 
-export interface RedirectAnomaly {
+export type RedirectAnomaly = {
   type: typeof AnomalyType.Redirect;
   from?: string;
   to?: string;
-}
+};
 
-export interface HeadersAnomaly {
+export type HeadersAnomaly = {
   type: typeof AnomalyType.Headers;
   headerName: string;
   from?: string[];
   to?: string[];
-}
+};
 
-export interface ReflectionCountAnomaly {
+export type ReflectionCountAnomaly = {
   type: typeof AnomalyType.ReflectionCount;
   parameterName: string;
   from: number;
   to: number;
-}
+};
 
-export interface BodyLengthAnomaly {
+export type BodyLengthAnomaly = {
   type: typeof AnomalyType.Body;
   check: "length";
   from: number;
   to: number;
-}
+};
 
-export interface BodyContentAnomaly {
+export type BodyContentAnomaly = {
   type: typeof AnomalyType.Body;
   check: "content";
   expectedDiffCount: number;
   actualDiffCount: number;
-}
+};
 
-export interface SimilarityAnomaly {
+export type SimilarityAnomaly = {
   type: typeof AnomalyType.Similarity;
   similarity: number;
   threshold: number;
-}
+};
 
 export type Anomaly =
   | StatusCodeAnomaly
@@ -128,18 +128,18 @@ export type Anomaly =
   | BodyContentAnomaly
   | SimilarityAnomaly;
 
-export interface Finding {
+export type Finding = {
   requestResponse: EngineRequestResponse;
   parameter: Parameter;
   anomaly: Anomaly;
-}
+};
 
-export interface AdditionalChecksResult {
+export type AdditionalChecksResult = {
   handlesSpecialCharacters: boolean;
   handlesEncodedSpecialCharacters: boolean;
-}
+};
 
-export interface StableFactors {
+export type StableFactors = {
   bodyStable: boolean;
   bodyLengthStable: boolean;
   statusCodeStable: boolean;
@@ -149,9 +149,9 @@ export interface StableFactors {
   reflectionsCount: number;
   unstableHeaders: string[];
   redirect?: string;
-}
+};
 
-export interface BaselineProfile {
+export type BaselineProfile = {
   initialRequestResponse: EngineRequestResponse;
   stableFactors: StableFactors;
   bodyDiffReferenceCount: number;
@@ -160,7 +160,7 @@ export interface BaselineProfile {
   maxSize?: number;
   bodyKind?: InspectableBodyKind;
   multipartBoundary?: string;
-}
+};
 
 export const EngineState = {
   Pending: "pending",
@@ -188,70 +188,70 @@ export type LoggerFn = (level: LoggerLevel, message: string) => void;
 export type SleepFn = (ms: number, signal?: AbortSignal) => Promise<void>;
 export type RandomSource = () => number;
 
-export interface RunOptions {
+export type RunOptions = {
   delayMs?: number;
   requestTimeoutMs?: number;
   timeoutMs?: number;
   signal?: AbortSignal;
   runControl?: RunControl;
   onEvent?: (event: DiscoveryEvent) => void;
-}
+};
 
-export interface EngineLearnInput {
+export type EngineLearnInput = {
   request: EngineRequest;
   engineConfig: EngineConfig;
   runOptions?: RunOptions;
-}
+};
 
-export interface EngineDiscoverInput {
+export type EngineDiscoverInput = {
   request: EngineRequest;
   words: string[];
   engineConfig: EngineConfig;
   profile: BaselineProfile;
   runOptions?: RunOptions;
-}
+};
 
-export interface EngineRunInput {
+export type EngineRunInput = {
   request: EngineRequest;
   words: string[];
   engineConfig: EngineConfig;
   runOptions?: RunOptions;
-}
+};
 
-export interface EngineLearnResult {
+export type EngineLearnResult = {
   profile: BaselineProfile;
-}
+};
 
-export interface EngineDiscoverResult {
+export type EngineDiscoverResult = {
   findings: Finding[];
   totalParametersAmount: number;
-}
+};
 
-export interface EngineRunSummaryBase {
+export type EngineRunSummaryBase = {
   findings: Finding[];
   totalParametersAmount: number;
-}
+};
 
-export interface EngineCompletedRunSummary extends EngineRunSummaryBase {
+export type EngineCompletedRunSummary = EngineRunSummaryBase & {
   state: typeof EngineState.Completed;
   phase: typeof EnginePhase.Discovery;
-}
+};
 
-export interface EngineCanceledRunSummary extends EngineRunSummaryBase {
+export type EngineCanceledRunSummary = EngineRunSummaryBase & {
   state: typeof EngineState.Canceled;
   phase: typeof EnginePhase.Learning | typeof EnginePhase.Discovery;
-}
+};
 
-export interface EngineTimeoutRunSummary extends EngineRunSummaryBase {
+export type EngineTimeoutRunSummary = EngineRunSummaryBase & {
   state: typeof EngineState.Timeout;
   phase: typeof EnginePhase.Learning | typeof EnginePhase.Discovery;
-}
+};
 
-export interface EngineFailedRunSummary extends EngineRunSummaryBase {
+export type EngineFailedRunSummary = EngineRunSummaryBase & {
   state: typeof EngineState.Error;
   phase: typeof EnginePhase.Learning | typeof EnginePhase.Discovery;
   failureReason: string;
-}
+};
 
 export type EngineRunSummary =
   | EngineCompletedRunSummary
@@ -259,21 +259,21 @@ export type EngineRunSummary =
   | EngineTimeoutRunSummary
   | EngineFailedRunSummary;
 
-export interface EngineCompletedRunResult extends EngineCompletedRunSummary {
+export type EngineCompletedRunResult = EngineCompletedRunSummary & {
   profile: BaselineProfile;
-}
+};
 
-export interface EngineCanceledRunResult extends EngineCanceledRunSummary {
+export type EngineCanceledRunResult = EngineCanceledRunSummary & {
   profile?: BaselineProfile;
-}
+};
 
-export interface EngineTimeoutRunResult extends EngineTimeoutRunSummary {
+export type EngineTimeoutRunResult = EngineTimeoutRunSummary & {
   profile?: BaselineProfile;
-}
+};
 
-export interface EngineFailedRunResult extends EngineFailedRunSummary {
+export type EngineFailedRunResult = EngineFailedRunSummary & {
   profile?: BaselineProfile;
-}
+};
 
 export type EngineRunResult =
   | EngineCompletedRunResult

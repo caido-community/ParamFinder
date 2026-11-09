@@ -4,11 +4,11 @@ export class RunControl {
   private paused = false;
   private waiters = new Set<() => void>();
 
-  public pause(): void {
+  public pause() {
     this.paused = true;
   }
 
-  public resume(): void {
+  public resume() {
     if (!this.paused) {
       return;
     }
@@ -23,7 +23,7 @@ export class RunControl {
     return this.paused;
   }
 
-  public async waitIfPaused(signal?: AbortSignal): Promise<void> {
+  public async waitIfPaused(signal?: AbortSignal) {
     throwIfAborted(signal);
 
     if (!this.paused) {
@@ -52,7 +52,7 @@ export class RunControl {
   }
 }
 
-export function throwIfAborted(signal?: AbortSignal): void {
+export function throwIfAborted(signal?: AbortSignal) {
   if (signal?.aborted) {
     throw new EngineError("RUN_ABORTED", "Run aborted");
   }

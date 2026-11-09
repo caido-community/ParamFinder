@@ -31,7 +31,7 @@ import { createParameterChunkVerifier } from "./verified-finding";
 const DRIFT_RECHECK_THRESHOLD = 3;
 const MAX_SCAN_CALIBRATIONS = 3;
 
-interface DiscoveryWorkflowDependencies {
+type DiscoveryWorkflowDependencies = {
   handleAutopilotResponse: (args: {
     request: EngineRequest;
     response: EngineRequestResponse;
@@ -41,7 +41,7 @@ interface DiscoveryWorkflowDependencies {
     hasAdjustedQuerySize: boolean;
     runOptions?: RunOptions;
   }) => Promise<AutopilotResult>;
-}
+};
 
 export function createDiscoveryWorkflows(
   runtime: Pick<EngineRuntime, "events" | "random" | "requests" | "run">,

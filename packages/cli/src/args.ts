@@ -12,7 +12,7 @@ import {
 
 export type OutputMode = "human" | "json" | "json-stream";
 
-export interface CliOptions {
+export type CliOptions = {
   url: string;
   method?: string;
   headers: string[];
@@ -43,9 +43,9 @@ export interface CliOptions {
   quiet: boolean;
   verbose: boolean;
   help: boolean;
-}
+};
 
-interface ParsedCliFlags {
+type ParsedCliFlags = {
   method?: string;
   header?: string[];
   attack?: AttackType;
@@ -76,7 +76,7 @@ interface ParsedCliFlags {
   quiet?: boolean;
   verbose?: boolean;
   help?: boolean;
-}
+};
 
 const ATTACK_TYPES = ["query", "body", "headers"] as const;
 const PARAMETER_VALUE_TYPES = ["string", "integer"] as const;

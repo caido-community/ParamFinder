@@ -14,14 +14,14 @@ export type {
   ScanSummary,
 } from "./scan-events";
 
-export interface RunDiscoveryScanOptions {
+export type RunDiscoveryScanOptions = {
   onEvent?: (event: ScanEvent) => void;
-}
+};
 
-export interface RunDiscoveryScanResult {
+export type RunDiscoveryScanResult = {
   result: EngineRunResult;
   summary: ScanSummary;
-}
+};
 
 export async function runDiscoveryScan(
   dependencies: EngineDependencies,

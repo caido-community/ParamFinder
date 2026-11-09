@@ -316,7 +316,7 @@ export class MiningService {
     return results.find((result) => !result.success) ?? ok(undefined);
   }
 
-  async deleteSessions(refs: SessionRef[]): Promise<void> {
+  async deleteSessions(refs: SessionRef[]) {
     const revisions = await this.sessions.deleteSessions(refs);
 
     this.runningSessions.tombstone(refs);
@@ -588,10 +588,7 @@ export class MiningService {
     return projectChangedError();
   }
 
-  private releasePause(
-    running: RunningSession,
-    ownership: PauseOwnership,
-  ): void {
+  private releasePause(running: RunningSession, ownership: PauseOwnership) {
     if (running.pauseOwnership !== ownership) {
       return;
     }
@@ -600,7 +597,7 @@ export class MiningService {
     this.rollbackPause(running);
   }
 
-  private rollbackPause(running: RunningSession): void {
+  private rollbackPause(running: RunningSession) {
     if (
       !running.controller.signal.aborted &&
       !this.events.isTerminal(running.state)

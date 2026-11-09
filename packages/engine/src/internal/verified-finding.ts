@@ -16,20 +16,20 @@ import {
   type VerifiedAnomalyResult,
 } from "./shared";
 
-export interface VerifyParameterChunkInput {
+export type VerifyParameterChunkInput = {
   request: EngineRequest;
   parameters: Parameter[];
   engineConfig: EngineConfig;
   profile: BaselineProfile;
   runOptions?: RunOptions;
   ignoredAnomalyTypes?: readonly AnomalyType[];
-}
+};
 
-export interface ParameterChunkVerifier {
+export type ParameterChunkVerifier = {
   verifyParameterChunk(
     input: VerifyParameterChunkInput,
   ): Promise<VerifiedAnomalyResult | undefined>;
-}
+};
 
 export function createParameterChunkVerifier(
   runtime: Pick<EngineRuntime, "events" | "requests">,
@@ -193,7 +193,7 @@ function emitDiscardedVerificationLog(
     controlAfterAnomaly?: ReturnType<typeof detectAnomaly>;
     controlWindowAnomaly?: ReturnType<typeof compareResponseToReference>;
   },
-): void {
+) {
   const discardReasons = [
     anomalies.controlBeforeAnomaly
       ? `before=${describeAnomaly(anomalies.controlBeforeAnomaly)}`

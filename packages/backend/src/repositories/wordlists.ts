@@ -38,7 +38,7 @@ export class WordlistsRepository {
     private readonly fs: WordlistsFileSystem = fileSystem,
   ) {}
 
-  async initialize(): Promise<void> {
+  async initialize() {
     await this.database.exec(
       `CREATE TABLE IF NOT EXISTS wordlists (
         path TEXT PRIMARY KEY,
@@ -87,11 +87,11 @@ export class WordlistsRepository {
     return [...new Set(words)];
   }
 
-  async removeFile(filePath: string): Promise<void> {
+  async removeFile(filePath: string) {
     await this.fs.rm(filePath);
   }
 
-  async insert(wordlist: Wordlist): Promise<void> {
+  async insert(wordlist: Wordlist) {
     const statement = await this.database.prepare(
       "INSERT OR IGNORE INTO wordlists (path, enabled, attack_types) VALUES (?, ?, ?)",
     );
@@ -119,29 +119,26 @@ export class WordlistsRepository {
     return row?.path;
   }
 
-  async delete(filePath: string): Promise<void> {
+  async delete(filePath: string) {
     const statement = await this.database.prepare(
       "DELETE FROM wordlists WHERE path = ?",
     );
     await statement.run(filePath);
   }
 
-  async clear(): Promise<void> {
+  async clear() {
     const statement = await this.database.prepare("DELETE FROM wordlists");
     await statement.run();
   }
 
-  async setEnabled(filePath: string, enabled: boolean): Promise<void> {
+  async setEnabled(filePath: string, enabled: boolean) {
     const statement = await this.database.prepare(
       "UPDATE wordlists SET enabled = ? WHERE path = ?",
     );
     await statement.run(enabled ? 1 : 0, filePath);
   }
 
-  async setAttackTypes(
-    filePath: string,
-    attackTypes: AttackType[],
-  ): Promise<void> {
+  async setAttackTypes(filePath: string, attackTypes: AttackType[]) {
     const statement = await this.database.prepare(
       "UPDATE wordlists SET attack_types = ? WHERE path = ?",
     );

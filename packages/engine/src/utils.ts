@@ -32,11 +32,7 @@ function findHeaderKey(headers: HeaderMap, name: string): string | undefined {
   );
 }
 
-export function appendHeader(
-  headers: HeaderMap,
-  name: string,
-  value: string,
-): void {
+export function appendHeader(headers: HeaderMap, name: string, value: string) {
   const key = findHeaderKey(headers, name) ?? name;
   if (!headers[key]) {
     headers[key] = [];
@@ -237,6 +233,6 @@ export function emitLog(
   logger: LoggerFn | undefined,
   level: LoggerLevel,
   message: string,
-): void {
+) {
   logger?.(level, message);
 }

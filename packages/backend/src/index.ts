@@ -23,7 +23,7 @@ import type { BackendSDK } from "./types";
 
 export type { API, Events, Spec } from "shared";
 
-export async function init(sdk: BackendSDK): Promise<void> {
+export async function init(sdk: BackendSDK) {
   const database = await sdk.meta.db();
   const pluginDirectory = sdk.meta.path();
 

@@ -5,9 +5,7 @@ const RESTART_ERROR = JSON.stringify({
   message: "Scan interrupted because the ParamFinder backend restarted.",
 });
 
-export async function initializeSessionDatabase(
-  database: Database,
-): Promise<void> {
+export async function initializeSessionDatabase(database: Database) {
   // The revision is the checkpoint between project hydration and live events.
   await database.exec(`
     CREATE TABLE IF NOT EXISTS paramfinder_session_projects (
@@ -83,7 +81,7 @@ export async function bumpProjectRevision(
   return row.revision;
 }
 
-async function failInterruptedSessions(database: Database): Promise<void> {
+async function failInterruptedSessions(database: Database) {
   const selectProjects = await database.prepare(
     `SELECT DISTINCT project_id FROM paramfinder_sessions
      WHERE state IN ('pending', 'learning', 'running', 'paused')`,

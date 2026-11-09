@@ -15,29 +15,29 @@ import type { OutputMode } from "./args";
 const RESET = "\u001B[0m";
 const SPINNER_FRAMES = ["-", "\\", "|", "/"];
 
-interface CliRunResult {
+type CliRunResult = {
   url: string;
   method: string;
   attackType: AttackType;
   durationMs: number;
   summary: ScanSummary;
-}
+};
 
-interface CliRunStart {
+type CliRunStart = {
   url: string;
   method: string;
   attackType: AttackType;
   wordCount: number;
   delayMs?: number;
   timeoutMs?: number;
-}
+};
 
-interface Reporter {
+type Reporter = {
   start(run: CliRunStart): void;
   handle(event: ScanEvent): void;
   complete(result: CliRunResult): void;
   error(message: string): void;
-}
+};
 
 export function createReporter(
   mode: OutputMode,
@@ -72,7 +72,7 @@ class HumanReporter implements Reporter {
     this.verbose = options.verbose;
   }
 
-  public start(run: CliRunStart): void {
+  public start(run: CliRunStart) {
     if (this.quiet) {
       return;
     }
@@ -103,7 +103,7 @@ class HumanReporter implements Reporter {
     this.writeLine("");
   }
 
-  public handle(event: ScanEvent): void {
+  public handle(event: ScanEvent) {
     switch (event.type) {
       case "state":
         this.currentState = event.state;
@@ -138,7 +138,7 @@ class HumanReporter implements Reporter {
     }
   }
 
-  public complete(result: CliRunResult): void {
+  public complete(result: CliRunResult) {
     this.clearStatus();
     const { summary } = result;
     this.writeLine("");
@@ -185,14 +185,14 @@ class HumanReporter implements Reporter {
     );
   }
 
-  public error(message: string): void {
+  public error(message: string) {
     this.clearStatus();
     process.stderr.write(
       `${this.bold(colorize(this.useColor, "31", "Error"))}: ${message}\n`,
     );
   }
 
-  private renderStatus(progress: ScanEvent["progress"]): void {
+  private renderStatus(progress: ScanEvent["progress"]) {
     if (this.quiet || !this.isTty) {
       return;
     }
@@ -213,7 +213,7 @@ class HumanReporter implements Reporter {
     this.lastStatusLength = text.length;
   }
 
-  private clearStatus(): void {
+  private clearStatus() {
     if (!this.isTty || this.lastStatusLength === 0) {
       return;
     }
@@ -222,12 +222,12 @@ class HumanReporter implements Reporter {
     this.lastStatusLength = 0;
   }
 
-  private writeLine(message: string): void {
+  private writeLine(message: string) {
     this.clearStatus();
     process.stderr.write(`${message}\n`);
   }
 
-  private writeFinding(finding: ScanFindingSummary): void {
+  private writeFinding(finding: ScanFindingSummary) {
     this.writeLine(
       `${this.bold(finding.parameter)} -> ${describeFindingForUser(finding)}`,
     );
@@ -254,31 +254,31 @@ class HumanReporter implements Reporter {
 }
 
 class JsonReporter implements Reporter {
-  public start(_run: CliRunStart): void {}
+  public start(_run: CliRunStart) {}
 
-  public handle(_event: ScanEvent): void {}
+  public handle(_event: ScanEvent) {}
 
-  public complete(result: CliRunResult): void {
+  public complete(result: CliRunResult) {
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   }
 
-  public error(message: string): void {
+  public error(message: string) {
     process.stderr.write(`Error: ${message}\n`);
   }
 }
 
 class JsonStreamReporter implements Reporter {
-  public start(_run: CliRunStart): void {}
+  public start(_run: CliRunStart) {}
 
-  public handle(event: ScanEvent): void {
+  public handle(event: ScanEvent) {
     process.stdout.write(`${JSON.stringify(event)}\n`);
   }
 
-  public complete(result: CliRunResult): void {
+  public complete(result: CliRunResult) {
     process.stdout.write(`${JSON.stringify({ type: "result", result })}\n`);
   }
 
-  public error(message: string): void {
+  public error(message: string) {
     process.stderr.write(`Error: ${message}\n`);
   }
 }

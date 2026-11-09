@@ -19,7 +19,7 @@ export type PauseOwnership =
   | { kind: "project" }
   | { kind: "external" };
 
-export interface RunningSession {
+export type RunningSession = {
   ref: SessionRef;
   controller: AbortController;
   runControl: RunControl;
@@ -30,7 +30,7 @@ export interface RunningSession {
   pauseOwnership: PauseOwnership;
   terminalPersistence: TerminalPersistence;
   eventError?: ApiError;
-}
+};
 
 export function setPauseOwner(
   session: RunningSession,
@@ -48,7 +48,7 @@ export class RunningSessionsStore {
     return this.sessions.get(key(ref));
   }
 
-  set(session: RunningSession): void {
+  set(session: RunningSession) {
     this.sessions.set(key(session.ref), session);
   }
 
@@ -60,11 +60,11 @@ export class RunningSessionsStore {
     return this.get(session.ref) === session;
   }
 
-  delete(session: RunningSession): void {
+  delete(session: RunningSession) {
     if (this.isCurrent(session)) this.sessions.delete(key(session.ref));
   }
 
-  tombstone(refs: SessionRef[]): void {
+  tombstone(refs: SessionRef[]) {
     for (const ref of refs) {
       const session = this.get(ref);
       if (session === undefined) continue;
