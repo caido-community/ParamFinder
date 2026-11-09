@@ -75,7 +75,7 @@ export function settingsToParamMinerConfig(
 export const wordlistSchema = z.object({
   path: z.string().min(1),
   enabled: z.boolean(),
-  attackTypes: z.array(attackTypeSchema).min(1),
+  attackTypes: z.array(attackTypeSchema),
 });
 export type Wordlist = z.infer<typeof wordlistSchema>;
 
@@ -321,7 +321,7 @@ export const wordlistEnabledUpdateSchema = z.object({
 });
 export const wordlistAttackTypesUpdateSchema = z.object({
   path: wordlistPathSchema,
-  attackTypes: z.array(attackTypeSchema).min(1),
+  attackTypes: z.array(attackTypeSchema),
 });
 export const startMiningInputSchema = z.object({
   target: requestSchema,

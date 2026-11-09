@@ -58,4 +58,38 @@ describe("wordlist mutations", () => {
     expect(setWordlistEnabled).toHaveBeenCalledTimes(1);
     expect(getWordlists).toHaveBeenCalledTimes(1);
   });
+
+  it("rejects an oversized file without reading it", async () => {
+    const importWordlist = vi.fn();
+    sdkHolder.current = {
+      backend: { importWordlist },
+    } as unknown as FrontendSDK;
+    const store = useWordlistsStore();
+    const file = new File(["a"], "big.txt");
+    Object.defineProperty(file, "size", { value: 10 * 1024 * 1024 + 1 });
+    const text = vi.spyOn(file, "text");
+
+    await expect(store.importFile(file)).resolves.toMatchObject({
+      success: false,
+      error: { code: "VALIDATION" },
+    });
+    expect(text).not.toHaveBeenCalled();
+    expect(importWordlist).not.toHaveBeenCalled();
+  });
+
+  it("imports a file within the size limit", async () => {
+    const importWordlist = vi.fn(async () =>
+      ok<Wordlist>({ path: "/small.txt", enabled: true, attackTypes: [] }),
+    );
+    const getWordlists = vi.fn(async () => ok<Wordlist[]>([]));
+    sdkHolder.current = {
+      backend: { importWordlist, getWordlists },
+    } as unknown as FrontendSDK;
+    const store = useWordlistsStore();
+
+    await expect(
+      store.importFile(new File(["alpha"], "small.txt")),
+    ).resolves.toEqual(ok(undefined));
+    expect(importWordlist).toHaveBeenCalledWith("alpha", "small.txt");
+  });
 });

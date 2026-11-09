@@ -24,12 +24,10 @@ const {
   maxParametersAmount,
   bodyState,
   treeOpen,
-  canPickPath,
   jsonPathError,
   canSubmit,
   reset,
   submitValue,
-  toggleTree,
   selectTreePath,
 } = useAdvancedScanForm();
 
@@ -69,17 +67,21 @@ const submit = () => {
     v-model:visible="visible"
     modal
     header="Advanced Scan"
-    :style="{ width: '480px', maxWidth: '92vw' }"
+    :style="{ width: '500px', maxWidth: '92vw' }"
   >
-    <div class="flex flex-col gap-4">
+    <div class="flex flex-col gap-3">
       <SelectButton
         v-model="attackType"
         :options="attackTypeOptions"
         option-label="label"
         option-value="value"
         :allow-empty="false"
+        size="small"
         :pt="{
-          root: { class: 'flex w-full [&>*]:flex-1 [&>*]:justify-center' },
+          root: {
+            class:
+              'flex w-full gap-1 p-1 rounded-md border border-surface-700 bg-surface-900 [&>*]:flex-1 [&>*]:justify-center',
+          },
         }"
       >
         <template #option="{ option }">
@@ -88,79 +90,61 @@ const submit = () => {
         </template>
       </SelectButton>
 
-      <div class="flex flex-col gap-1.5">
-        <label
-          class="flex items-center gap-1.5 text-xs font-medium text-surface-200"
-        >
-          Custom parameter value
-          <i
-            v-tooltip.top="
-              'A random value is appended to the end so each parameter is unique.'
-            "
-            class="fas fa-circle-question text-[11px] text-surface-500 cursor-help"
-          />
-        </label>
-        <InputText
-          ref="customValueInput"
-          v-model="customValue"
-          placeholder="Optional custom value"
-          class="w-full text-sm"
-          autocomplete="off"
-          @keyup.enter="submit"
-        />
+      <div class="flex flex-col gap-1">
+        <div class="grid grid-cols-[1fr_140px] gap-2.5">
+          <label
+            class="flex flex-col gap-1 text-xs font-medium text-surface-200"
+          >
+            Custom value
+            <InputText
+              ref="customValueInput"
+              v-model="customValue"
+              placeholder="Random if empty"
+              class="w-full text-sm"
+              autocomplete="off"
+              @keyup.enter="submit"
+            />
+          </label>
+          <label
+            class="flex flex-col gap-1 text-xs font-medium text-surface-200"
+          >
+            Params / request
+            <InputNumber
+              v-model="maxParametersAmount"
+              :min="1"
+              fluid
+              input-class="text-sm"
+              placeholder="Auto"
+            />
+          </label>
+        </div>
+        <p class="text-[11px] text-surface-500">
+          A random suffix keeps every value unique. Leave params empty to
+          auto-detect.
+        </p>
       </div>
 
-      <div class="flex flex-col gap-1.5">
-        <label
-          class="flex items-center gap-1.5 text-xs font-medium text-surface-200"
-        >
-          Max parameters per request
-          <i
-            v-tooltip.top="
-              'Maximum number of parameters tested per request. Leave empty to auto-detect.'
-            "
-            class="fas fa-circle-question text-[11px] text-surface-500 cursor-help"
-          />
-        </label>
-        <InputNumber
-          v-model="maxParametersAmount"
-          :min="1"
-          fluid
-          placeholder="Auto-detect"
-        />
-      </div>
-
-      <div v-if="attackType === 'body'" class="flex flex-col gap-1.5">
-        <label
-          class="flex items-center gap-1.5 text-xs font-medium text-surface-200"
-        >
+      <div
+        v-if="attackType === 'body' && bodyState.kind === 'valid'"
+        class="flex flex-col gap-1.5"
+      >
+        <label class="text-xs font-medium text-surface-200">
           JSON body path
-          <i
-            v-tooltip.top="
-              'JSONPath into the request body, e.g. $.data.user. Use the picker to select a path.'
-            "
-            class="fas fa-circle-question text-[11px] text-surface-500 cursor-help"
-          />
         </label>
         <div class="relative">
           <InputText
             v-model="jsonBodyPath"
-            class="w-full font-mono text-sm pr-9"
+            class="w-full text-sm pr-9"
             placeholder="e.g. $.data.user"
             autocomplete="off"
             @keyup.enter="submit"
           />
           <button
-            v-tooltip.left="
-              canPickPath
-                ? 'Pick a path from the JSON body'
-                : 'Path picker disabled — request has no JSON body'
-            "
+            v-tooltip.left="'Pick a path from the JSON body'"
             type="button"
-            class="absolute right-0 top-0 bottom-0 w-9 flex items-center justify-center text-surface-400 hover:text-surface-100 hover:bg-surface-700/40 disabled:opacity-40 disabled:cursor-not-allowed border-l border-surface-700/60 rounded-r-md transition-colors"
+            class="absolute right-0 top-0 bottom-0 w-9 flex items-center justify-center text-surface-400 hover:text-surface-100 hover:bg-surface-700/40 border-l border-surface-700/60 rounded-r-md transition-colors"
             :class="{ 'text-secondary-400': treeOpen }"
-            :disabled="!canPickPath"
-            @click="toggleTree"
+            @click="treeOpen = !treeOpen"
           >
             <i class="fas fa-folder-tree text-xs" />
           </button>
@@ -170,30 +154,8 @@ const submit = () => {
           {{ jsonPathError }}
         </p>
 
-        <p
-          v-if="bodyState.kind === 'empty'"
-          class="flex items-start gap-2 text-xs text-sky-300/90 bg-sky-500/10 border-l-2 border-sky-500 px-2 py-1.5 rounded-sm"
-        >
-          <i class="fas fa-circle-info mt-0.5 shrink-0" />
-          <span>
-            This request has no body. The body attack sends a generated JSON
-            body. Leave the path empty to inject at the root.
-          </span>
-        </p>
-        <p
-          v-else-if="bodyState.kind === 'not-json'"
-          class="flex items-start gap-2 text-xs text-amber-300/90 bg-amber-500/10 border-l-2 border-amber-500 px-2 py-1.5 rounded-sm"
-        >
-          <i class="fas fa-triangle-exclamation mt-0.5 shrink-0" />
-          <span>
-            Request body is not valid JSON, so the picker is unavailable. ({{
-              bodyState.reason
-            }})
-          </span>
-        </p>
-
         <div
-          v-if="treeOpen && bodyState.kind === 'valid'"
+          v-if="treeOpen"
           class="border border-surface-700/60 rounded-md bg-surface-900/40 overflow-hidden"
         >
           <div
@@ -233,10 +195,6 @@ const submit = () => {
       >
         <Checkbox v-model="cacheBusterParameter" binary />
         <span class="text-xs text-surface-200">Add cache-buster parameter</span>
-        <i
-          v-tooltip.top="'Adds a random parameter to bypass response caches.'"
-          class="fas fa-circle-question text-[11px] text-surface-500 cursor-help"
-        />
       </label>
     </div>
 

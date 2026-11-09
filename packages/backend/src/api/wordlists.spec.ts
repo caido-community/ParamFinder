@@ -24,21 +24,25 @@ beforeEach(() => {
 });
 
 describe("wordlist API validation", () => {
-  it("rejects unknown and empty attack type lists", async () => {
+  it("rejects unknown attack types", async () => {
     const unknown = await handlers.setWordlistAttackTypes(sdk, "/words.txt", [
       "unknown" as "query",
     ]);
-    const empty = await handlers.setWordlistAttackTypes(sdk, "/words.txt", []);
 
     expect(unknown).toMatchObject({
       success: false,
       error: { code: "VALIDATION" },
     });
-    expect(empty).toMatchObject({
-      success: false,
-      error: { code: "VALIDATION" },
-    });
     expect(setAttackTypes).not.toHaveBeenCalled();
+  });
+
+  it("accepts an empty attack type list", async () => {
+    setAttackTypes.mockResolvedValue(undefined);
+
+    await expect(
+      handlers.setWordlistAttackTypes(sdk, "/words.txt", []),
+    ).resolves.toEqual({ success: true, value: undefined });
+    expect(setAttackTypes).toHaveBeenCalledWith("/words.txt", []);
   });
 
   it("rejects invalid paths and enabled values", async () => {

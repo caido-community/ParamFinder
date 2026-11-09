@@ -1,8 +1,7 @@
 import type { EditorView } from "@codemirror/view";
-import { useEventListener } from "@vueuse/core";
-import { onMounted, type Ref, ref, watch } from "vue";
+import { useEventListener, useIntersectionObserver } from "@vueuse/core";
+import { type Ref, ref, watch } from "vue";
 
-import { usePageEnterCounter } from "@/plugins/lifecycle";
 import { useSDK } from "@/plugins/sdk";
 import { toCrlf } from "@/shared/utils/request";
 
@@ -25,7 +24,6 @@ export function useHttpEditor(
   source: Readonly<Ref<HttpEditorSource>>,
 ) {
   const sdk = useSDK();
-  const pageEnterCounter = usePageEnterCounter();
 
   const contextMenu = ref();
   let editorView: EditorView | undefined;
@@ -41,21 +39,23 @@ export function useHttpEditor(
   };
 
   const initialize = () => {
-    if (root.value === undefined) {
+    const el = root.value;
+    if (!el) {
       return;
     }
 
+    el.replaceChildren();
     const currentSource = source.value;
     const editor =
       currentSource.type === "request"
         ? sdk.ui.httpRequestEditor()
         : sdk.ui.httpResponseEditor();
-    root.value.appendChild(editor.getElement());
+    el.appendChild(editor.getElement());
     editorView = editor.getEditorView();
     setContent(currentSource.raw);
   };
 
-  const sendToReplay = () => {
+  const sendToReplay = async () => {
     const currentSource = source.value;
     if (currentSource.type !== "request") {
       return;
@@ -63,11 +63,18 @@ export function useHttpEditor(
 
     const { host, port, isTls } = currentSource.connectionInfo;
     const current = editorView?.state.doc.toString() ?? currentSource.raw;
-    sdk.replay.createSession({
-      type: "Raw",
-      raw: toCrlf(current),
-      connectionInfo: { host, port, isTLS: isTls },
-    });
+    try {
+      await sdk.replay.createSession({
+        type: "Raw",
+        raw: toCrlf(current),
+        connectionInfo: { host, port, isTLS: isTls },
+      });
+    } catch (cause) {
+      sdk.window.showToast(
+        `Failed to send to Replay: ${cause instanceof Error ? cause.message : String(cause)}`,
+        { variant: "error" },
+      );
+    }
   };
 
   const menuItems = [
@@ -104,21 +111,14 @@ export function useHttpEditor(
 
   useEventListener(document, "keydown", onKeyDown, { capture: true });
 
-  onMounted(initialize);
+  // Caido's editor element has no view while detached and remounts with a fresh empty one when the page is re-attached.
+  useIntersectionObserver(root, ([entry]) => {
+    if (entry?.isIntersecting && editorView?.dom.isConnected !== true) {
+      initialize();
+    }
+  });
 
   watch(() => source.value.raw, setContent);
-
-  watch(pageEnterCounter, () => {
-    editorView = undefined;
-    setTimeout(() => {
-      if (root.value === undefined) {
-        return;
-      }
-
-      root.value.replaceChildren();
-      initialize();
-    }, 0);
-  });
 
   return { contextMenu, menuItems, onContextMenu };
 }
