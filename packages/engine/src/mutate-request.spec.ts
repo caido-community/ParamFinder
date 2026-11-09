@@ -455,6 +455,28 @@ describe("mutateRequest", () => {
     );
   });
 
+  it("percent-encodes query names that are not printable ASCII", () => {
+    const mutated = mutateRequest({
+      baseRequest: createRequest({
+        method: "GET",
+        raw: "GET /test HTTP/1.1\r\nHost: example.com\r\n\r\n",
+      }),
+      attackType: "query",
+      parameters: [
+        { name: "v1\u2213subset", value: "1" },
+        { name: "\u0003debug", value: "2" },
+        { name: "items[]", value: "3" },
+        { name: "a%5Bb%5D", value: "4" },
+      ],
+      context: "discovery",
+      updateContentLength: false,
+    });
+
+    expect(mutated.query).toBe(
+      "v1%E2%88%93subset=1&%03debug=2&items[]=3&a%5Bb%5D=4",
+    );
+  });
+
   it("recalculates content length after mutating form bodies", () => {
     const mutated = mutateRequest({
       baseRequest: createRequest({

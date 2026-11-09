@@ -1821,4 +1821,28 @@ describe("createDiscoveryEngine", () => {
 
     expect(largestChunk).toBeLessThan(100);
   });
+
+  it("does not report wordlist entries the server rejects as malformed", async () => {
+    const engine = createTestEngine({
+      random: createSeededRandom(6),
+      provider: {
+        async send(request) {
+          const malformed = [...request.query].some(
+            (character) => character < "!" || character > "~",
+          );
+          return malformed
+            ? createResponse(request, { status: 400, body: "" })
+            : createResponse(request);
+        },
+      },
+    });
+
+    const result = await engine.run({
+      request: createBaseRequest(),
+      words: ["alpha", "\u0003bravo", "v1\u2213subset", "charlie"],
+      engineConfig: createScanConfig(),
+    });
+
+    expect(result.findings).toEqual([]);
+  });
 });

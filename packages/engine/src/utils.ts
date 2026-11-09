@@ -217,7 +217,10 @@ export function sanitizeWords(words: string[]): string[] {
   const cleaned: string[] = [];
 
   for (const word of words) {
-    const trimmed = word.trim();
+    const trimmed = [...word]
+      .filter((character) => character >= " " && character !== "\u007f")
+      .join("")
+      .trim();
     if (!trimmed || seen.has(trimmed)) {
       continue;
     }

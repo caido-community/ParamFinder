@@ -136,7 +136,10 @@ export function wouldExceedMutationBudget(
 
 function applyQueryInjection(forge: HttpForge, parameters: Parameter[]) {
   parameters.forEach((parameter) => {
-    forge.addQueryParam(parameter.name, parameter.value);
+    forge.addQueryParam(
+      parameter.name.replace(/[^\u0020-\u007e]+/gu, encodeURIComponent),
+      parameter.value,
+    );
   });
 }
 
