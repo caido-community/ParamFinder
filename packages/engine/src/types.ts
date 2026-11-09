@@ -188,6 +188,9 @@ export type LoggerFn = (level: LoggerLevel, message: string) => void;
 export type SleepFn = (ms: number, signal?: AbortSignal) => Promise<void>;
 export type RandomSource = () => number;
 
+// Timers hold a signed 32-bit delay; a longer one fires at once.
+export const MAX_TIMEOUT_MS = 2 ** 31 - 1;
+
 export type RunOptions = {
   delayMs?: number;
   requestTimeoutMs?: number;

@@ -10,6 +10,8 @@ import { createRunInputFromCli, NodeRequestProvider } from "./node-request";
 import { createReporter } from "./reporter";
 import { loadCliWords } from "./word-source";
 
+const MAX_RESUME_DELAY_MS = 60_000;
+
 export async function runCli(
   argv: string[] = process.argv.slice(2),
 ): Promise<number> {
@@ -30,6 +32,7 @@ export async function runCli(
     const runControl = new RunControl();
     const startedAt = Date.now();
     let resumeTimer: ReturnType<typeof setTimeout> | undefined;
+    let consecutivePauses = 0;
 
     const handleSigint = () => {
       controller.abort();
@@ -68,8 +71,15 @@ export async function runCli(
         {
           onEvent: (event) => {
             reporter.handle(event);
+            if (event.type === "request") {
+              consecutivePauses = 0;
+            }
             if (event.type === "state" && event.state === EngineState.Paused) {
-              const retryDelayMs = Math.max(options.delayMs ?? 0, 250);
+              const retryDelayMs = Math.min(
+                Math.max(options.delayMs ?? 0, 250) * 2 ** consecutivePauses,
+                MAX_RESUME_DELAY_MS,
+              );
+              consecutivePauses += 1;
               if (resumeTimer) {
                 clearTimeout(resumeTimer);
               }

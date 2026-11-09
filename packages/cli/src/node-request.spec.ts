@@ -158,6 +158,39 @@ describe("NodeRequestProvider", () => {
     },
   );
 
+  it("leaves out header names that fetch refuses to send", async () => {
+    const fetchMock = vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(new Response("", { status: 200 }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await new NodeRequestProvider().send({
+      id: "request-1",
+      host: "example.com",
+      port: 443,
+      url: "https://example.com/test",
+      path: "/test",
+      query: "",
+      method: "GET",
+      headers: {
+        Host: ["example.com"],
+        Expect: ["abc"],
+        "Keep-Alive": ["abc"],
+        "Transfer-Encoding": ["abc"],
+        Upgrade: ["abc"],
+        "Content-Length": ["abc"],
+        "X-Debug": ["abc"],
+      },
+      body: "",
+      tls: true,
+      raw: "GET /test HTTP/1.1\r\nHost: example.com\r\n\r\n",
+      context: "discovery",
+    });
+
+    const headers = new Headers(fetchMock.mock.calls[0]?.[1]?.headers);
+    expect([...headers.keys()]).toEqual(["host", "x-debug"]);
+  });
+
   it("maps fetch responses into engine responses with body byte length", async () => {
     const fetchMock = vi.fn<typeof fetch>().mockResolvedValue(
       new Response("created", {

@@ -10,7 +10,6 @@ import type {
   EngineRequestResponse,
   EngineTimeoutRunResult,
   Finding,
-  Parameter,
 } from "../types";
 
 const ADDITIONAL_CHECK_STRING_VALUE = "exampleValue";
@@ -68,20 +67,6 @@ export function createAdditionalCheckParameterValue(
   return engineConfig.customValueType === "integer"
     ? ADDITIONAL_CHECK_INTEGER_VALUE
     : ADDITIONAL_CHECK_STRING_VALUE;
-}
-
-export function createWafParameters(
-  pattern: string,
-  engineConfig: EngineConfig,
-): Parameter[] {
-  if (
-    engineConfig.attackType === "body" &&
-    engineConfig.customValueType === "integer"
-  ) {
-    return [{ name: "test", value: ADDITIONAL_CHECK_INTEGER_VALUE }];
-  }
-
-  return [{ name: "test", value: pattern }];
 }
 
 export function getConfiguredMaxSize(

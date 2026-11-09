@@ -107,10 +107,14 @@ export function createEngineRuntime(
       : setTimeout(() => deadlineController.abort(), limits.timeoutMs);
   let knownWafResponse: EngineResponse | undefined;
   let needsRequestDelay = false;
+  let activePhase: EnginePhase | undefined;
 
   const emit = (runOptions: EventSink, event: DiscoveryEvent) => {
     if (event.type === "log") {
       emitLog(runtime.logger, event.level, event.message);
+    }
+    if (event.type === "state" && event.state !== EngineState.Paused) {
+      activePhase = event.phase;
     }
 
     runOptions?.onEvent?.(event);
@@ -289,10 +293,13 @@ export function createEngineRuntime(
       );
     }
 
+    // Discovery also sends learning-context canaries, so the request alone
+    // does not tell which phase to resume into.
+    const phase = activePhase ?? getPhaseForRequest(request);
     const stateEvent: DiscoveryEvent = {
       type: "state",
       state: EngineState.Paused,
-      phase: getPhaseForRequest(request),
+      phase,
     };
     const logEvent: DiscoveryEvent = {
       type: "log",
@@ -310,7 +317,14 @@ export function createEngineRuntime(
 
     runControl.pause();
     await waitForCheckpoint(runOptions);
-    emitResumedState(runOptions, request);
+    emit(runOptions, {
+      type: "state",
+      state:
+        phase === EnginePhase.Learning
+          ? EngineState.Learning
+          : EngineState.Running,
+      phase,
+    });
   };
 
   const sendRequest = async (
@@ -456,17 +470,6 @@ export function createEngineRuntime(
     random: runtime.random,
     dispose,
   };
-}
-
-function emitResumedState(runOptions: RunOptions, request: EngineRequest) {
-  runOptions.onEvent?.({
-    type: "state",
-    state:
-      getPhaseForRequest(request) === EnginePhase.Learning
-        ? EngineState.Learning
-        : EngineState.Running,
-    phase: getPhaseForRequest(request),
-  });
 }
 
 type OperationSignal = {

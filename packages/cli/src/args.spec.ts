@@ -103,4 +103,20 @@ describe("parseCliArgs", () => {
       "Use either --custom-value or --custom-value-type integer, not both",
     );
   });
+
+  it.each(["1e3", "30s", "2.9", ""])(
+    "rejects %j as an integer flag value",
+    (value) => {
+      expect(() =>
+        parseCliArgs(["https://example.com", "--delay", value]),
+      ).toThrow("Expected an integer for --delay");
+    },
+  );
+
+  it("turns size auto-detection off when an explicit size is given", () => {
+    expect(
+      parseCliArgs(["https://example.com", "--max-query-size", "500"]),
+    ).toMatchObject({ autoDetectMaxSize: false, maxQuerySize: 500 });
+    expect(parseCliArgs(["https://example.com"]).autoDetectMaxSize).toBe(true);
+  });
 });

@@ -21,13 +21,14 @@ import type {
   RunOptions,
 } from "../types";
 import { AnomalyType, EnginePhase, EngineState } from "../types";
-import { sanitizeWords } from "../utils";
+import { hasHeader, sanitizeWords } from "../utils";
 
 import { createBaselineHealthMonitor } from "./baseline-health";
 import type { EngineRuntime } from "./runtime";
 import { type AutopilotResult, getConfiguredMaxSize } from "./shared";
 import { createParameterChunkVerifier } from "./verified-finding";
 
+const HEADER_NAME_PATTERN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 const DRIFT_RECHECK_THRESHOLD = 3;
 const MAX_SCAN_CALIBRATIONS = 3;
 
@@ -173,7 +174,11 @@ export function createDiscoveryWorkflows(
     parsed: EngineDiscoverInput,
   ): Promise<EngineDiscoverResult> => {
     runtime.requests.setKnownWafResponse(parsed.profile.wafResponse);
-    const sanitizedWords = sanitizeWords(parsed.words);
+    const words = sanitizeWords(parsed.words);
+    const sanitizedWords =
+      parsed.engineConfig.attackType === "headers"
+        ? words.filter((word) => isInjectableHeaderName(parsed.request, word))
+        : words;
     const findings: Finding[] = [];
     let maxSize =
       parsed.profile.maxSize ?? getConfiguredMaxSize(parsed.engineConfig);
@@ -183,12 +188,26 @@ export function createDiscoveryWorkflows(
     let calibrationPending = true;
     let calibrationAttempts = 0;
     let consecutiveRejectedAnomalies = 0;
+    let reportedIndex = 0;
 
     runtime.events.emit(parsed.runOptions, {
       type: "state",
       state: EngineState.Running,
       phase: EnginePhase.Discovery,
     });
+
+    if (sanitizedWords.length !== words.length) {
+      const skipped = words.length - sanitizedWords.length;
+      runtime.events.emit(parsed.runOptions, {
+        type: "log",
+        level: "info",
+        message: `Skipping ${skipped} word${skipped === 1 ? "" : "s"} that the request already sends as a header or that cannot be a header name.`,
+      });
+      runtime.events.emit(parsed.runOptions, {
+        type: "adjustTotalParameters",
+        totalParametersAmount: sanitizedWords.length,
+      });
+    }
 
     while (nextIndex < sanitizedWords.length) {
       await runtime.run.waitForCheckpoint(parsed.runOptions);
@@ -240,8 +259,10 @@ export function createDiscoveryWorkflows(
       runtime.events.detectAndEmitRequest(
         parsed.runOptions,
         requestResponse,
+        Math.max(0, chunk.nextIndex - reportedIndex),
         chunk.parameters.length,
       );
+      reportedIndex = Math.max(reportedIndex, chunk.nextIndex);
 
       const autopilot = await dependencies.handleAutopilotResponse({
         request: parsed.request,
@@ -295,7 +316,13 @@ export function createDiscoveryWorkflows(
                 (parameter) =>
                   parameter.name === reflectionAnomaly.parameterName,
               );
-              if (reflectedParameter !== undefined) {
+              const alreadyFound = findings.some(
+                (finding) =>
+                  finding.parameter.name === reflectionAnomaly.parameterName,
+              );
+              if (alreadyFound) {
+                confirmedReflectionNames.add(reflectionAnomaly.parameterName);
+              } else if (reflectedParameter !== undefined) {
                 const finding = await verifySingleParameter({
                   request: parsed.request,
                   parameter: reflectedParameter,
@@ -319,7 +346,15 @@ export function createDiscoveryWorkflows(
               AnomalyType.ReflectionCount,
             ];
 
-            if (parametersToVerify.length === 0) {
+            const otherAnomaly = detectAnomaly(
+              parsed.profile,
+              requestResponse.response,
+              parametersToVerify,
+              ignoredAnomalyTypes,
+              parsed.engineConfig.ignoreCloudflareBlocks,
+            );
+            if (parametersToVerify.length === 0 || otherAnomaly === undefined) {
+              consecutiveRejectedAnomalies = 0;
               await runtime.run.sleepIfNeeded(parsed.runOptions);
               continue;
             }
@@ -379,4 +414,8 @@ export function createDiscoveryWorkflows(
   return {
     performDiscovery,
   };
+}
+
+function isInjectableHeaderName(request: EngineRequest, name: string): boolean {
+  return HEADER_NAME_PATTERN.test(name) && !hasHeader(request.headers, name);
 }

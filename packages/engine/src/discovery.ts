@@ -194,6 +194,7 @@ function collectChunk(
   let probe = 1;
 
   while (fitting === probe && materializeUpTo(probe + 1)) {
+    materializeUpTo(probe * 2);
     const next = Math.min(probe * 2, candidates.length);
     if (fitsFirst(next)) {
       fitting = next;

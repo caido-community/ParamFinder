@@ -261,7 +261,21 @@ function replaceProfile(target: BaselineProfile, replacement: BaselineProfile) {
     bodyKind: target.bodyKind,
     multipartBoundary: target.multipartBoundary,
   };
+  const previous = target.stableFactors;
   Object.assign(target, replacement, metadata);
+
+  // Canaries all share one shape, so they cannot prove a factor stable that
+  // the varied learning samples already showed to be unstable.
+  const next = target.stableFactors;
+  next.bodyStable &&= previous.bodyStable;
+  next.bodyLengthStable &&= previous.bodyLengthStable;
+  next.statusCodeStable &&= previous.statusCodeStable;
+  next.reflectionStable &&= previous.reflectionStable;
+  next.similarityStable &&= previous.similarityStable;
+  next.redirectStable &&= previous.redirectStable;
+  next.unstableHeaders = Array.from(
+    new Set([...previous.unstableHeaders, ...next.unstableHeaders]),
+  );
 }
 
 function disableUnstableFactor(profile: BaselineProfile, anomaly: Anomaly) {

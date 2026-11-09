@@ -1,6 +1,8 @@
 import {
   AnomalyType,
+  ATTACK_TYPES,
   type AttackType,
+  PARAMETER_VALUE_TYPES,
   type ParameterValueType,
 } from "@paramfinder/engine";
 import {
@@ -78,8 +80,6 @@ type ParsedCliFlags = {
   help?: boolean;
 };
 
-const ATTACK_TYPES = ["query", "body", "headers"] as const;
-const PARAMETER_VALUE_TYPES = ["string", "integer"] as const;
 const ANOMALY_TYPES = Object.values(AnomalyType);
 
 export function parseCliArgs(argv: string[]): CliOptions {
@@ -119,7 +119,11 @@ export function parseCliArgs(argv: string[]): CliOptions {
     timeoutMs: flags.timeout,
     maxParametersAmount: flags.maxParams,
     learnRequestsCount: flags.learnRequests ?? 6,
-    autoDetectMaxSize: flags.autoDetectMaxSize ?? true,
+    autoDetectMaxSize:
+      flags.autoDetectMaxSize ??
+      (flags.maxQuerySize === undefined &&
+        flags.maxBodySize === undefined &&
+        flags.maxHeaderSize === undefined),
     maxQuerySize: flags.maxQuerySize,
     maxBodySize: flags.maxBodySize,
     maxHeaderSize: flags.maxHeaderSize,
@@ -253,14 +257,13 @@ function parseAnomalyType(
 }
 
 function parseIntegerArg(value: string, flagName: string): number {
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isInteger(parsed)) {
+  if (!/^\d+$/.test(value)) {
     throw new InvalidArgumentError(
       `Expected an integer for ${flagName}, received: ${value}`,
     );
   }
 
-  return parsed;
+  return Number(value);
 }
 
 function resolveOutputMode(json?: boolean, jsonStream?: boolean): OutputMode {

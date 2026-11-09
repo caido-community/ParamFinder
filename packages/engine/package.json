@@ -25,7 +25,7 @@
   },
   "dependencies": {
     "dot-prop": "^10.1.0",
-    "ts-http-forge": "^0.1.7",
+    "ts-http-forge": "^0.2.0",
     "zod": "^4.4.3"
   }
 }

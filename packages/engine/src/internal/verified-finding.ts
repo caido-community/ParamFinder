@@ -102,26 +102,29 @@ export function createParameterChunkVerifier(
       ignoredAnomalyTypes,
       skipCloudflareBlocks,
     );
+    const comparison = {
+      ignoredAnomalyTypes,
+      skipCloudflareBlocks,
+      expectedBodyDiffCount: input.profile.bodyDiffReferenceCount,
+      expectedReflectionsCount: input.profile.stableFactors.reflectionsCount,
+    };
     const candidateVsBefore = compareResponseToReference(input.profile, {
       referenceResponse: controlBeforeRequestResponse.response,
       response: requestResponse.response,
       parameters: input.parameters,
-      ignoredAnomalyTypes,
-      skipCloudflareBlocks,
+      ...comparison,
     });
     const candidateVsAfter = compareResponseToReference(input.profile, {
       referenceResponse: controlAfterRequestResponse.response,
       response: requestResponse.response,
       parameters: input.parameters,
-      ignoredAnomalyTypes,
-      skipCloudflareBlocks,
+      ...comparison,
     });
     const controlWindowAnomaly = compareResponseToReference(input.profile, {
       referenceResponse: controlBeforeRequestResponse.response,
       response: controlAfterRequestResponse.response,
       parameters: [],
-      ignoredAnomalyTypes,
-      skipCloudflareBlocks,
+      ...comparison,
     });
 
     if (
