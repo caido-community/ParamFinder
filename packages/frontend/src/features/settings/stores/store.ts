@@ -1,5 +1,11 @@
 import { defineStore } from "pinia";
-import { type ApiResult, error, ok, type Settings } from "shared";
+import {
+  type ApiResult,
+  error,
+  ok,
+  type Settings,
+  type SettingsChanges,
+} from "shared";
 import { ref } from "vue";
 
 import { useSDK } from "@/plugins/sdk";
@@ -22,7 +28,7 @@ export const useSettingsStore = defineStore("settings", () => {
   };
 
   const update = async (
-    changes: Partial<Settings>,
+    changes: SettingsChanges,
   ): Promise<ApiResult<Settings>> => {
     try {
       const result = await sdk.backend.patchSettings(changes);

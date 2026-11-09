@@ -1,7 +1,8 @@
 <script setup lang="ts">
+import { MAX_TIMEOUT_MS } from "@paramfinder/engine";
 import { storeToRefs } from "pinia";
 import InputNumber from "primevue/inputnumber";
-import type { Settings } from "shared";
+import type { SettingsChanges } from "shared";
 
 import { useSettingsStore } from "@/features/settings/stores/store";
 import { useActionResult } from "@/shared/composables/useActionResult";
@@ -10,15 +11,20 @@ const settingsStore = useSettingsStore();
 const { showResult } = useActionResult();
 const { data } = storeToRefs(settingsStore);
 
-const updateSettings = async (updates: Partial<Settings>) => {
+const updateSettings = async (updates: SettingsChanges) => {
   showResult(await settingsStore.update(updates), {
     errorPrefix: "Failed to update settings",
   });
 };
 
-const setField = <K extends keyof Settings>(field: K, value: Settings[K]) => {
+const setField = <K extends keyof SettingsChanges>(
+  field: K,
+  value: SettingsChanges[K],
+) => {
   return updateSettings({ [field]: value });
 };
+
+const maxTimeoutSeconds = Math.floor(MAX_TIMEOUT_MS / 1000);
 
 const numberPt = {
   root: { class: "w-48" },
@@ -62,6 +68,7 @@ const numberPt = {
         <InputNumber
           :model-value="data.requestTimeoutSeconds"
           :min="1"
+          :max="maxTimeoutSeconds"
           :pt="numberPt"
           @update:model-value="
             (value) => setField('requestTimeoutSeconds', value ?? 1)
@@ -81,9 +88,11 @@ const numberPt = {
         <InputNumber
           :model-value="data.scanTimeoutSeconds"
           :min="1"
+          :max="maxTimeoutSeconds"
+          placeholder="No limit"
           :pt="numberPt"
           @update:model-value="
-            (value) => setField('scanTimeoutSeconds', value ?? undefined)
+            (value) => setField('scanTimeoutSeconds', value ?? null)
           "
         />
       </div>
