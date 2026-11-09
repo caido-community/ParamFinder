@@ -36,4 +36,11 @@ describe("sanitizeWords", () => {
       sanitizeWords(["token", "\u0003token", "\u0003debug", "a\u0000b\u007f"]),
     ).toEqual(["token", "debug", "ab"]);
   });
+
+  it("drops lone surrogates but keeps characters outside the BMP", () => {
+    expect(sanitizeWords(["a\ud800b", "\udc00", "key\u{1f511}"])).toEqual([
+      "ab",
+      "key\u{1f511}",
+    ]);
+  });
 });

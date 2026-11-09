@@ -1839,7 +1839,7 @@ describe("createDiscoveryEngine", () => {
 
     const result = await engine.run({
       request: createBaseRequest(),
-      words: ["alpha", "\u0003bravo", "v1\u2213subset", "charlie"],
+      words: ["alpha", "\u0003bravo", "v1\u2213subset", "a\ud800b", "charlie"],
       engineConfig: createScanConfig(),
     });
 

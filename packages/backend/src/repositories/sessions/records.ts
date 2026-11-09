@@ -20,7 +20,7 @@ import {
 } from "./mapping";
 import { bumpProjectRevision } from "./schema";
 
-const DELETE_BATCH_SIZE = 500;
+export const SESSION_DELETE_BATCH_SIZE = 500;
 
 export class SessionsRepository {
   constructor(private readonly database: Database) {}
@@ -134,26 +134,23 @@ export class SessionsRepository {
       return new Map();
     }
 
-    for (let start = 0; start < deletions.length; start += DELETE_BATCH_SIZE) {
-      const batch = deletions.slice(start, start + DELETE_BATCH_SIZE);
-      const where = batch
-        .map(() => "(project_id = ? AND session_id = ?)")
-        .join(" OR ");
-      const parameters = batch.flatMap(({ projectId, sessionId }) => [
-        projectId,
-        sessionId,
-      ]);
+    const where = deletions
+      .map(() => "(project_id = ? AND session_id = ?)")
+      .join(" OR ");
+    const parameters = deletions.flatMap(({ projectId, sessionId }) => [
+      projectId,
+      sessionId,
+    ]);
 
-      const deleteSessions = await this.database.prepare(
-        `DELETE FROM paramfinder_sessions WHERE ${where}`,
-      );
-      await deleteSessions.run(...parameters);
+    const deleteSessions = await this.database.prepare(
+      `DELETE FROM paramfinder_sessions WHERE ${where}`,
+    );
+    await deleteSessions.run(...parameters);
 
-      const deleteEntries = await this.database.prepare(
-        `DELETE FROM paramfinder_session_entries WHERE ${where}`,
-      );
-      await deleteEntries.run(...parameters);
-    }
+    const deleteEntries = await this.database.prepare(
+      `DELETE FROM paramfinder_session_entries WHERE ${where}`,
+    );
+    await deleteEntries.run(...parameters);
 
     const revisions = new Map<string, number>();
 

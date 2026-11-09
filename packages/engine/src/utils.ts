@@ -212,15 +212,20 @@ export function countLineDifferences(first: string, second: string): number {
   return countLineDifferencesFromLeft(splitLines(first), second);
 }
 
+function isWordCharacter(character: string) {
+  const isControl = character < " " || character === "\u007f";
+  const isLoneSurrogate =
+    character.length === 1 && character >= "\ud800" && character <= "\udfff";
+
+  return !isControl && !isLoneSurrogate;
+}
+
 export function sanitizeWords(words: string[]): string[] {
   const seen = new Set<string>();
   const cleaned: string[] = [];
 
   for (const word of words) {
-    const trimmed = [...word]
-      .filter((character) => character >= " " && character !== "\u007f")
-      .join("")
-      .trim();
+    const trimmed = [...word].filter(isWordCharacter).join("").trim();
     if (!trimmed || seen.has(trimmed)) {
       continue;
     }

@@ -1042,4 +1042,27 @@ describe("MiningService", () => {
       refs: [ref],
     });
   });
+
+  it("publishes each completed deletion batch even if a later one fails", async () => {
+    const refs = Array.from({ length: 501 }, (_, index) => ({
+      projectId: ref.projectId,
+      sessionId: String(index + 1),
+    }));
+    sessions.deleteSessions
+      .mockImplementationOnce(async () => new Map([[ref.projectId, 7]]))
+      .mockRejectedValueOnce(new Error("disk full"));
+
+    await expect(service.deleteSessions(refs)).rejects.toThrow("disk full");
+
+    expect(
+      sessions.deleteSessions.mock.calls.map(([batch]) => batch.length),
+    ).toEqual([500, 1]);
+    expect(envelopes).toEqual([
+      {
+        projectId: ref.projectId,
+        revision: 7,
+        changes: [{ type: "delete", refs: refs.slice(0, 500) }],
+      },
+    ]);
+  });
 });
