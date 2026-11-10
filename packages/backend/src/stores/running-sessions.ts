@@ -19,7 +19,7 @@ export type PauseOwnership =
   | { kind: "project" }
   | { kind: "external" };
 
-export interface RunningSession {
+export type RunningSession = {
   ref: SessionRef;
   controller: AbortController;
   runControl: RunControl;
@@ -30,7 +30,7 @@ export interface RunningSession {
   pauseOwnership: PauseOwnership;
   terminalPersistence: TerminalPersistence;
   eventError?: ApiError;
-}
+};
 
 export function setPauseOwner(
   session: RunningSession,

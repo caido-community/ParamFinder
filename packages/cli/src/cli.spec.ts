@@ -268,7 +268,7 @@ async function startServer(
   return `http://127.0.0.1:${address.port}`;
 }
 
-async function closeServer(server: Server): Promise<void> {
+async function closeServer(server: Server) {
   if (!server.listening) {
     return;
   }
@@ -326,7 +326,7 @@ async function runCli(
   });
 }
 
-function respondText(response: ServerResponse, body: string): void {
+function respondText(response: ServerResponse, body: string) {
   response.statusCode = 200;
   response.setHeader("Content-Type", "text/plain");
   response.end(body);

@@ -1,9 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { createDiscoveryEngine } from "./engine";
 import type { DiscoveryEvent } from "./events";
 import { RunControl } from "./run-control";
-import { AnomalyType } from "./types";
+import { AnomalyType, MAX_TIMEOUT_MS } from "./types";
+import { getFirstHeaderValue } from "./utils";
 
 import type {
   BaselineProfile,
@@ -11,6 +12,7 @@ import type {
   EngineDependencies,
   EngineRequest,
   EngineRequestResponse,
+  EngineResponse,
   RequestProvider,
 } from "./index";
 
@@ -71,7 +73,10 @@ function createProvider(): RequestProvider {
   };
 }
 
-function createResponse(request: EngineRequest): EngineRequestResponse {
+function createResponse(
+  request: EngineRequest,
+  overrides: Partial<EngineResponse> = {},
+): EngineRequestResponse {
   return {
     request,
     response: {
@@ -80,6 +85,7 @@ function createResponse(request: EngineRequest): EngineRequestResponse {
       body: "baseline response",
       length: 0,
       time: 1,
+      ...overrides,
     },
   };
 }
@@ -106,6 +112,27 @@ function createConfig(overrides?: Partial<EngineConfig>): EngineConfig {
     ...overrides,
     autopilotEnabled: overrides?.autopilotEnabled ?? false,
     customValueType: overrides?.customValueType ?? "string",
+  };
+}
+
+const STATIC_LINES = Array.from(
+  { length: 40 },
+  (_, index) => `<p>static line ${index}</p>`,
+).join("\n");
+
+function createScanConfig(overrides?: Partial<EngineConfig>): EngineConfig {
+  return createConfig({
+    learnRequestsCount: 6,
+    maxQuerySize: 2000,
+    ...overrides,
+  });
+}
+
+function createSeededRandom(seed: number): () => number {
+  let state = seed;
+  return () => {
+    state = (state * 1664525 + 1013904223) % 4294967296;
+    return state / 4294967296;
   };
 }
 
@@ -241,9 +268,6 @@ describe("createDiscoveryEngine", () => {
       [],
       [],
       ["token"],
-      [],
-      [],
-      ["alpha"],
       [],
     ]);
     expect(
@@ -1495,5 +1519,330 @@ describe("createDiscoveryEngine", () => {
       "state",
       "completed",
     ]);
+  });
+
+  it("does not confirm every word on a reflective page after the baseline drifts", async () => {
+    let discoveryStarted = false;
+    let drifted = false;
+    const engine = createTestEngine({
+      random: createSeededRandom(7),
+      provider: {
+        async send(request) {
+          if (request.context === "discovery") {
+            drifted = discoveryStarted;
+            discoveryStarted = true;
+          }
+          const footer = drifted ? "build 2" : "build 1";
+          return createResponse(request, {
+            body: `<html>\n${STATIC_LINES}\n<link rel="canonical" href="/test?${request.query}">\n${footer}\n</html>`,
+          });
+        },
+      },
+    });
+
+    const result = await engine.run({
+      request: createBaseRequest(),
+      words: ["alpha", "bravo", "charlie", "delta", "echo", "foxtrot"],
+      engineConfig: createScanConfig({ maxParametersAmount: 3 }),
+    });
+
+    expect(result.findings).toEqual([]);
+  });
+
+  it("confirms a parameter on a page with a line that changes every request", async () => {
+    let counter = 0;
+    const engine = createTestEngine({
+      random: createSeededRandom(3),
+      provider: {
+        async send(request) {
+          counter += 1;
+          const dynamic = `request id: ${"x".repeat(counter % 7)}${counter}`;
+          const admin = new URLSearchParams(request.query).has("admin")
+            ? "\n<div>admin panel enabled</div>"
+            : "";
+          return createResponse(request, {
+            body: `<html>\n${dynamic}\n${STATIC_LINES}${admin}\n</html>`,
+          });
+        },
+      },
+    });
+
+    const result = await engine.run({
+      request: createBaseRequest(),
+      words: ["alpha", "admin", "bravo"],
+      engineConfig: createScanConfig(),
+    });
+
+    expect(result.findings.map((finding) => finding.parameter.name)).toEqual([
+      "admin",
+    ]);
+  });
+
+  it("does not learn a baseline-like response as a WAF block", async () => {
+    const engine = createTestEngine({
+      random: createSeededRandom(11),
+      provider: {
+        async send(request) {
+          const parameters = new URLSearchParams(request.query);
+          const headers: Record<string, string[]> = {};
+          if (parameters.has("test")) headers["X-Test-Mode"] = ["on"];
+          if (parameters.has("admin")) headers["X-Admin"] = ["1"];
+          return createResponse(request, {
+            headers,
+            body: `<html>\n${STATIC_LINES}\n</html>`,
+          });
+        },
+      },
+    });
+
+    const result = await engine.run({
+      request: createBaseRequest(),
+      words: ["alpha", "admin", "bravo"],
+      engineConfig: createScanConfig({ wafDetection: true }),
+    });
+
+    expect(result.profile?.wafResponse).toBeUndefined();
+    expect(result.findings.map((finding) => finding.parameter.name)).toEqual([
+      "admin",
+    ]);
+  });
+
+  it("keeps length-dependent factors unstable when the baseline is refreshed", async () => {
+    let sent = 0;
+    const engine = createTestEngine({
+      random: createSeededRandom(5),
+      provider: {
+        async send(request) {
+          sent += 1;
+          const footer = sent > 6 ? "build 2" : "build 1";
+          return createResponse(request, {
+            body: `<html>\n${STATIC_LINES}\n<a href="/test?${request.query}">self</a>\n${footer}\n</html>`,
+          });
+        },
+      },
+    });
+
+    const result = await engine.run({
+      request: createBaseRequest(),
+      words: ["a1", "bb22", "ccc333", "dddd4444", "eeeee55555", "ffffff666666"],
+      engineConfig: createScanConfig({
+        maxParametersAmount: 2,
+        ignoreAnomalyTypes: [AnomalyType.ReflectionCount],
+      }),
+    });
+
+    expect(result.profile?.stableFactors.bodyLengthStable).toBe(false);
+    expect(result.findings).toEqual([]);
+  });
+
+  it("resumes into discovery after a rate limit on a calibration canary", async () => {
+    const runControl = new RunControl();
+    const states: string[] = [];
+    let learningRequests = 0;
+    let limited = false;
+    const engine = createTestEngine({
+      random: createSeededRandom(2),
+      provider: {
+        async send(request) {
+          if (request.context === "learning") learningRequests += 1;
+          if (learningRequests === 7 && !limited) {
+            limited = true;
+            return createResponse(request, { status: 429 });
+          }
+          return createResponse(request);
+        },
+      },
+    });
+
+    await engine.run({
+      request: createBaseRequest(),
+      words: ["alpha", "bravo"],
+      engineConfig: createScanConfig(),
+      runOptions: {
+        runControl,
+        onEvent: (event) => {
+          if (event.type !== "state") return;
+          states.push(`${event.state}/${event.phase}`);
+          if (event.state === "paused") {
+            setTimeout(() => runControl.resume(), 1);
+          }
+        },
+      },
+    });
+
+    expect(states).toEqual([
+      "learning/learning",
+      "running/discovery",
+      "paused/discovery",
+      "running/discovery",
+      "completed/discovery",
+    ]);
+  });
+
+  it("reports a reflected parameter once when its chunk is sent again", async () => {
+    const reflected = ["r1", "r2", "r3"];
+    const engine = createTestEngine({
+      random: createSeededRandom(9),
+      provider: {
+        async send(request) {
+          const parameters = new URLSearchParams(request.query);
+          const echoed = reflected.flatMap(
+            (name) => parameters.get(name) ?? [],
+          );
+          return createResponse(request, {
+            body: ["baseline response", ...echoed].join(" "),
+          });
+        },
+      },
+    });
+
+    const result = await engine.run({
+      request: createBaseRequest(),
+      words: ["r1", "x1", "r2", "x2", "r3", "x3"],
+      engineConfig: createScanConfig({ maxParametersAmount: 2 }),
+    });
+
+    expect(result.findings.map((finding) => finding.parameter.name)).toEqual(
+      reflected,
+    );
+  });
+
+  it("does not count words twice when a chunk is sent again", async () => {
+    let progress = 0;
+    const words = Array.from({ length: 60 }, (_, index) => `word${index}`);
+    const engine = createTestEngine({
+      random: createSeededRandom(4),
+      provider: {
+        async send(request) {
+          return request.query.length > 300
+            ? createResponse(request, { status: 414, body: "URI Too Long" })
+            : createResponse(request);
+        },
+      },
+    });
+
+    const result = await engine.run({
+      request: createBaseRequest(),
+      words,
+      engineConfig: createScanConfig({ autopilotEnabled: true }),
+      runOptions: {
+        onEvent: (event) => {
+          if (event.type === "request") progress += event.parametersSent;
+        },
+      },
+    });
+
+    expect(progress).toBe(result.totalParametersAmount);
+  });
+
+  it("skips header words that would overwrite or break the request", async () => {
+    const sentHeaders: Record<string, string[]>[] = [];
+    const events: DiscoveryEvent[] = [];
+    const engine = createTestEngine({
+      random: createSeededRandom(1),
+      provider: {
+        async send(request) {
+          sentHeaders.push(request.headers);
+          return createResponse(request, { body: "" });
+        },
+      },
+    });
+
+    const result = await engine.run({
+      request: createBaseRequest(),
+      words: ["host", "bad name", "x-debug"],
+      engineConfig: createScanConfig({
+        attackType: "headers",
+        additionalChecks: true,
+      }),
+      runOptions: { onEvent: (event) => events.push(event) },
+    });
+
+    expect(result.state).toBe("completed");
+    expect(result.totalParametersAmount).toBe(1);
+    expect(
+      events.filter((event) => event.type === "adjustTotalParameters"),
+    ).toEqual([
+      { type: "adjustTotalParameters", totalParametersAmount: 3 },
+      { type: "adjustTotalParameters", totalParametersAmount: 1 },
+    ]);
+    expect(
+      sentHeaders.every(
+        (headers) => getFirstHeaderValue(headers, "Host") === "example.com",
+      ),
+    ).toBe(true);
+    expect(
+      sentHeaders.some((headers) =>
+        Object.keys(headers).some((name) => /[\s[\]%]/.test(name)),
+      ),
+    ).toBe(false);
+  });
+
+  it.each(["timeoutMs", "requestTimeoutMs"] as const)(
+    "rejects a %s longer than a timer can hold",
+    async (option) => {
+      const send = vi.fn(async (request: EngineRequest) =>
+        createResponse(request),
+      );
+      const engine = createTestEngine({ provider: { send } });
+
+      await expect(
+        engine.run({
+          request: createBaseRequest(),
+          words: ["alpha"],
+          engineConfig: createScanConfig(),
+          runOptions: { [option]: MAX_TIMEOUT_MS + 1 },
+        }),
+      ).rejects.toMatchObject({ code: "INVALID_RUN_OPTIONS" });
+      expect(send).not.toHaveBeenCalled();
+    },
+  );
+
+  it("bounds chunks when auto-detect is off and no size is configured", async () => {
+    let largestChunk = 0;
+    const engine = createTestEngine({
+      random: createSeededRandom(1),
+      provider: {
+        async send(request) {
+          largestChunk = Math.max(
+            largestChunk,
+            new URLSearchParams(request.query).size,
+          );
+          return createResponse(request);
+        },
+      },
+    });
+
+    await engine.run({
+      request: createBaseRequest(),
+      words: Array.from({ length: 500 }, (_, index) => `word${index}`),
+      engineConfig: createScanConfig({ maxQuerySize: undefined }),
+    });
+
+    expect(largestChunk).toBeLessThan(100);
+  });
+
+  it("does not report wordlist entries the server rejects as malformed", async () => {
+    const engine = createTestEngine({
+      random: createSeededRandom(6),
+      provider: {
+        async send(request) {
+          const malformed = [...request.query].some(
+            (character) => character < "!" || character > "~",
+          );
+          return malformed
+            ? createResponse(request, { status: 400, body: "" })
+            : createResponse(request);
+        },
+      },
+    });
+
+    const result = await engine.run({
+      request: createBaseRequest(),
+      words: ["alpha", "\u0003bravo", "v1\u2213subset", "a\ud800b", "charlie"],
+      engineConfig: createScanConfig(),
+    });
+
+    expect(result.findings).toEqual([]);
   });
 });

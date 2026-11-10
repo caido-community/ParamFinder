@@ -394,6 +394,89 @@ describe("mutateRequest", () => {
     expect(mutated.body).toContain('name="secret"');
   });
 
+  it("keeps CRLF line endings in bodies it does not rewrite", () => {
+    const body =
+      '--abc123\r\nContent-Disposition: form-data; name="field"\r\n\r\nvalue\r\n--abc123--\r\n';
+    const mutated = mutateRequest({
+      baseRequest: createRequest({
+        raw: `POST /test HTTP/1.1\r\nHost: example.com\r\nContent-Type: multipart/form-data; boundary=abc123\r\nContent-Length: ${body.length}\r\n\r\n${body}`,
+      }),
+      attackType: "query",
+      parameters: [{ name: "secret", value: "1" }],
+      context: "discovery",
+      updateContentLength: false,
+    });
+
+    expect(mutated.body).toBe(body);
+    expect(mutated.raw.endsWith(`\r\n\r\n${body}`)).toBe(true);
+  });
+
+  it("injects multipart parts with the line ending of the original body", () => {
+    const body =
+      '--abc123\r\nContent-Disposition: form-data; name="field"\r\n\r\nvalue\r\n--abc123--\r\n';
+    const mutated = mutateRequest({
+      baseRequest: createRequest({
+        raw: `POST /test HTTP/1.1\r\nHost: example.com\r\nContent-Type: multipart/form-data; boundary=abc123\r\n\r\n${body}`,
+      }),
+      attackType: "body",
+      parameters: [{ name: "secret", value: "injected" }],
+      context: "discovery",
+      updateContentLength: true,
+    });
+
+    expect(mutated.body).toBe(
+      '--abc123\r\nContent-Disposition: form-data; name="field"\r\n\r\nvalue\r\n--abc123\r\nContent-Disposition: form-data; name="secret"\r\n\r\ninjected\r\n--abc123--\r\n',
+    );
+    expect(readHeader(mutated, "Content-Length")).toEqual([
+      String(mutated.body.length),
+    ]);
+    expect(mutated.raw.endsWith(`\r\n\r\n${mutated.body}`)).toBe(true);
+  });
+
+  it("keeps query names from breaking the request line", () => {
+    const mutated = mutateRequest({
+      baseRequest: createRequest({
+        method: "GET",
+        raw: "GET /test HTTP/1.1\r\nHost: example.com\r\n\r\n",
+      }),
+      attackType: "query",
+      parameters: [
+        { name: "user name", value: "1" },
+        { name: "a&b#c", value: "2" },
+        { name: "items[]", value: "3" },
+      ],
+      context: "discovery",
+      updateContentLength: false,
+    });
+
+    expect(mutated.query).toBe("user%20name=1&a%26b%23c=2&items[]=3");
+    expect(mutated.raw.split("\r\n")[0]).toBe(
+      "GET /test?user%20name=1&a%26b%23c=2&items[]=3 HTTP/1.1",
+    );
+  });
+
+  it("percent-encodes query names that are not printable ASCII", () => {
+    const mutated = mutateRequest({
+      baseRequest: createRequest({
+        method: "GET",
+        raw: "GET /test HTTP/1.1\r\nHost: example.com\r\n\r\n",
+      }),
+      attackType: "query",
+      parameters: [
+        { name: "v1\u2213subset", value: "1" },
+        { name: "\u0003debug", value: "2" },
+        { name: "items[]", value: "3" },
+        { name: "a%5Bb%5D", value: "4" },
+      ],
+      context: "discovery",
+      updateContentLength: false,
+    });
+
+    expect(mutated.query).toBe(
+      "v1%E2%88%93subset=1&%03debug=2&items[]=3&a%5Bb%5D=4",
+    );
+  });
+
   it("recalculates content length after mutating form bodies", () => {
     const mutated = mutateRequest({
       baseRequest: createRequest({

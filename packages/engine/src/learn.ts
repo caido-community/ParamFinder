@@ -28,16 +28,16 @@ import {
 
 const DEFAULT_UNSTABLE_HEADERS = ["Content-Length", "Date", "CF-Cache-Status"];
 
-export interface LearningSample {
+export type LearningSample = {
   requestResponse: EngineRequestResponse;
   parameters: Parameter[];
-}
+};
 
-interface SizeProbeConfig {
+type SizeProbeConfig = {
   sizes: number[];
   defaultSize: number;
   createParameters: (random: () => number, size: number) => Parameter[];
-}
+};
 
 export function generateLearningParameters(
   count: number,

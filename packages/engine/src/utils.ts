@@ -32,11 +32,7 @@ function findHeaderKey(headers: HeaderMap, name: string): string | undefined {
   );
 }
 
-export function appendHeader(
-  headers: HeaderMap,
-  name: string,
-  value: string,
-): void {
+export function appendHeader(headers: HeaderMap, name: string, value: string) {
   const key = findHeaderKey(headers, name) ?? name;
   if (!headers[key]) {
     headers[key] = [];
@@ -216,12 +212,20 @@ export function countLineDifferences(first: string, second: string): number {
   return countLineDifferencesFromLeft(splitLines(first), second);
 }
 
+function isWordCharacter(character: string) {
+  const isControl = character < " " || character === "\u007f";
+  const isLoneSurrogate =
+    character.length === 1 && character >= "\ud800" && character <= "\udfff";
+
+  return !isControl && !isLoneSurrogate;
+}
+
 export function sanitizeWords(words: string[]): string[] {
   const seen = new Set<string>();
   const cleaned: string[] = [];
 
   for (const word of words) {
-    const trimmed = word.trim();
+    const trimmed = [...word].filter(isWordCharacter).join("").trim();
     if (!trimmed || seen.has(trimmed)) {
       continue;
     }
@@ -237,6 +241,6 @@ export function emitLog(
   logger: LoggerFn | undefined,
   level: LoggerLevel,
   message: string,
-): void {
+) {
   logger?.(level, message);
 }

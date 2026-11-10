@@ -18,19 +18,19 @@ import { anomaliesMatch } from "./shared";
 const CANARY_REQUESTS = 3;
 const MAX_CALIBRATION_ROUNDS = 8;
 
-interface BaselineCalibrationInput {
+type BaselineCalibrationInput = {
   request: EngineRequest;
   parameters: Parameter[];
   engineConfig: EngineConfig;
   profile: BaselineProfile;
   runOptions?: RunOptions;
   maxParametersAmount?: number;
-}
+};
 
-interface BaselineCalibrationResult {
+type BaselineCalibrationResult = {
   changed: boolean;
   maxParametersAmount?: number;
-}
+};
 
 export function createBaselineHealthMonitor(
   runtime: Pick<EngineRuntime, "events" | "random" | "requests" | "run">,
@@ -253,10 +253,7 @@ function capParameters(
     : parameters.slice(0, maxParametersAmount);
 }
 
-function replaceProfile(
-  target: BaselineProfile,
-  replacement: BaselineProfile,
-): void {
+function replaceProfile(target: BaselineProfile, replacement: BaselineProfile) {
   const metadata = {
     wafResponse: target.wafResponse,
     additionalChecks: target.additionalChecks,
@@ -264,7 +261,21 @@ function replaceProfile(
     bodyKind: target.bodyKind,
     multipartBoundary: target.multipartBoundary,
   };
+  const previous = target.stableFactors;
   Object.assign(target, replacement, metadata);
+
+  // Canaries all share one shape, so they cannot prove a factor stable that
+  // the varied learning samples already showed to be unstable.
+  const next = target.stableFactors;
+  next.bodyStable &&= previous.bodyStable;
+  next.bodyLengthStable &&= previous.bodyLengthStable;
+  next.statusCodeStable &&= previous.statusCodeStable;
+  next.reflectionStable &&= previous.reflectionStable;
+  next.similarityStable &&= previous.similarityStable;
+  next.redirectStable &&= previous.redirectStable;
+  next.unstableHeaders = Array.from(
+    new Set([...previous.unstableHeaders, ...next.unstableHeaders]),
+  );
 }
 
 function disableUnstableFactor(profile: BaselineProfile, anomaly: Anomaly) {

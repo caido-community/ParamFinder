@@ -9,6 +9,7 @@ import {
   type EngineRequestResponse,
   type EngineResponse,
   INSPECTABLE_BODY_KINDS,
+  MAX_TIMEOUT_MS,
   type Parameter,
   REQUEST_CONTEXTS,
   type RunOptions,
@@ -123,8 +124,8 @@ export const baselineProfileSchema: z.ZodType<BaselineProfile> = z.object({
 
 export const runOptionsSchema: z.ZodType<RunOptions> = z.object({
   delayMs: z.number().int().min(0).optional(),
-  requestTimeoutMs: z.number().int().positive().optional(),
-  timeoutMs: z.number().int().positive().optional(),
+  requestTimeoutMs: z.number().int().positive().max(MAX_TIMEOUT_MS).optional(),
+  timeoutMs: z.number().int().positive().max(MAX_TIMEOUT_MS).optional(),
   signal: z
     .custom<AbortSignal>(
       (value) => value instanceof AbortSignal,

@@ -85,8 +85,8 @@ importers:
         specifier: ^10.1.0
         version: 10.1.0
       ts-http-forge:
-        specifier: ^0.1.7
-        version: 0.1.7
+        specifier: ^0.2.0
+        version: 0.2.0
       zod:
         specifier: ^4.4.3
         version: 4.4.3
@@ -3363,8 +3363,8 @@ packages:
     peerDependencies:
       typescript: '>=4.8.4'
 
-  ts-http-forge@0.1.7:
-    resolution: {integrity: sha512-jPLYDBOCrx3nG8SJ7qrht7R2RiBrTmU7dhdLBMaky1YiojlSUNo/vHyTYpTSV2bK/l5biKlW1ZTOg/MXMmbGjA==}
+  ts-http-forge@0.2.0:
+    resolution: {integrity: sha512-OYUi67qLHftrLFt+WDszCo5LdrupgKrgnAUfDc+mkpUiaYd7bhzwsEYE8Z1acMJrA3W1WT6KyJVRaiUtl6bXfg==}
 
   ts-interface-checker@0.1.13:
     resolution: {integrity: sha512-Y/arvbn+rrz3JCKl9C4kVNfTfSm2/mEp5FSz5EsZSANGPSlQrpRI5M4PKF+mJnE52jOO90PnPSc3Ur3bTQw0gA==}
@@ -7184,7 +7184,7 @@ snapshots:
     dependencies:
       typescript: 5.5.4
 
-  ts-http-forge@0.1.7:
+  ts-http-forge@0.2.0:
     dependencies:
       cookie-es: 2.0.1
 

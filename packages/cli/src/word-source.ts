@@ -31,7 +31,7 @@ function appendWords(
   target: string[],
   seen: Set<string>,
   words: Iterable<string>,
-): void {
+) {
   for (const word of words) {
     const trimmed = word.trim();
     if (!trimmed || seen.has(trimmed)) {
@@ -47,7 +47,7 @@ async function appendWordlist(
   target: string[],
   seen: Set<string>,
   wordlistPath: string,
-): Promise<void> {
+) {
   const stream = createReadStream(wordlistPath, { encoding: "utf8" });
   const lineReader = createInterface({
     input: stream,

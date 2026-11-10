@@ -23,7 +23,7 @@ const CLOUDFLARE_CHALLENGE_TITLE = "<title>Just a moment...</title>";
 const CLOUDFLARE_RETRY_COUNT = 2;
 const RATE_LIMIT_STATUS = 429;
 
-export interface SendMutatedRequestArgs {
+export type SendMutatedRequestArgs = {
   baseRequest: EngineRequest;
   parameters: Parameter[];
   attackType: AttackType;
@@ -31,19 +31,19 @@ export interface SendMutatedRequestArgs {
   engineConfig: EngineConfig;
   runOptions?: RunOptions;
   allowCloudflareChallenge?: boolean;
-}
+};
 
-interface SendRequestOptions {
+type SendRequestOptions = {
   allowCloudflareChallenge?: boolean;
-}
+};
 
-interface PauseForInterventionOptions {
+type PauseForInterventionOptions = {
   level: "info" | "warn";
   message: string;
   stateFirst: boolean;
-}
+};
 
-export interface EngineEventService {
+export type EngineEventService = {
   emit: (runOptions: EventSink, event: DiscoveryEvent) => void;
   detectAndEmitRequest: (
     runOptions: EventSink,
@@ -51,17 +51,17 @@ export interface EngineEventService {
     parametersSent: number,
     parametersTested?: number,
   ) => void;
-}
+};
 
-export interface EngineRunService {
+export type EngineRunService = {
   waitForCheckpoint: (runOptions?: RunOptions) => Promise<void>;
   sleepIfNeeded: (
     runOptions?: RunOptions,
     extraDelayMs?: number,
   ) => Promise<void>;
-}
+};
 
-export interface EngineRequestService {
+export type EngineRequestService = {
   sendRequest: (
     request: EngineRequest,
     runOptions?: RunOptions,
@@ -70,19 +70,19 @@ export interface EngineRequestService {
     args: SendMutatedRequestArgs,
   ) => Promise<EngineRequestResponse>;
   setKnownWafResponse: (response?: EngineResponse) => void;
-}
+};
 
-export interface EngineRuntime {
+export type EngineRuntime = {
   events: EngineEventService;
   run: EngineRunService;
   requests: EngineRequestService;
   random: RandomSource;
   dispose: () => void;
-}
+};
 
-export interface EngineRuntimeLimits {
+export type EngineRuntimeLimits = {
   timeoutMs?: number;
-}
+};
 
 export function createEngineRuntime(
   dependencies: EngineDependencies,
@@ -107,16 +107,20 @@ export function createEngineRuntime(
       : setTimeout(() => deadlineController.abort(), limits.timeoutMs);
   let knownWafResponse: EngineResponse | undefined;
   let needsRequestDelay = false;
+  let activePhase: EnginePhase | undefined;
 
-  const emit = (runOptions: EventSink, event: DiscoveryEvent): void => {
+  const emit = (runOptions: EventSink, event: DiscoveryEvent) => {
     if (event.type === "log") {
       emitLog(runtime.logger, event.level, event.message);
+    }
+    if (event.type === "state" && event.state !== EngineState.Paused) {
+      activePhase = event.phase;
     }
 
     runOptions?.onEvent?.(event);
   };
 
-  const waitForCheckpoint = async (runOptions?: RunOptions): Promise<void> => {
+  const waitForCheckpoint = async (runOptions?: RunOptions) => {
     throwIfStopped(runOptions);
     if (runOptions?.runControl === undefined) {
       return;
@@ -280,7 +284,7 @@ export function createEngineRuntime(
     request: EngineRequest,
     runOptions: RunOptions,
     options: PauseForInterventionOptions,
-  ): Promise<void> => {
+  ) => {
     const runControl = runOptions.runControl;
     if (runControl === undefined) {
       throw new EngineError(
@@ -289,10 +293,13 @@ export function createEngineRuntime(
       );
     }
 
+    // Discovery also sends learning-context canaries, so the request alone
+    // does not tell which phase to resume into.
+    const phase = activePhase ?? getPhaseForRequest(request);
     const stateEvent: DiscoveryEvent = {
       type: "state",
       state: EngineState.Paused,
-      phase: getPhaseForRequest(request),
+      phase,
     };
     const logEvent: DiscoveryEvent = {
       type: "log",
@@ -310,7 +317,14 @@ export function createEngineRuntime(
 
     runControl.pause();
     await waitForCheckpoint(runOptions);
-    emitResumedState(runOptions, request);
+    emit(runOptions, {
+      type: "state",
+      state:
+        phase === EnginePhase.Learning
+          ? EngineState.Learning
+          : EngineState.Running,
+      phase,
+    });
   };
 
   const sendRequest = async (
@@ -366,7 +380,7 @@ export function createEngineRuntime(
     });
   };
 
-  const setKnownWafResponse = (response?: EngineResponse): void => {
+  const setKnownWafResponse = (response?: EngineResponse) => {
     knownWafResponse = response;
   };
 
@@ -379,7 +393,7 @@ export function createEngineRuntime(
     deadlineController?.signal.aborted === true ||
     (deadlineAt !== undefined && runtime.now() >= deadlineAt);
 
-  const throwIfStopped = (runOptions?: RunOptions): void => {
+  const throwIfStopped = (runOptions?: RunOptions) => {
     if (runOptions?.signal?.aborted) {
       throw new EngineError("RUN_ABORTED", "Run aborted");
     }
@@ -458,25 +472,11 @@ export function createEngineRuntime(
   };
 }
 
-function emitResumedState(
-  runOptions: RunOptions,
-  request: EngineRequest,
-): void {
-  runOptions.onEvent?.({
-    type: "state",
-    state:
-      getPhaseForRequest(request) === EnginePhase.Learning
-        ? EngineState.Learning
-        : EngineState.Running,
-    phase: getPhaseForRequest(request),
-  });
-}
-
-interface OperationSignal {
+type OperationSignal = {
   signal: AbortSignal;
   requestTimedOut: () => boolean;
   dispose: () => void;
-}
+};
 
 async function raceWithSignal<T>(
   promise: Promise<T>,

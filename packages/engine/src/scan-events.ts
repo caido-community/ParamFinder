@@ -11,33 +11,33 @@ import type {
   RequestContext,
 } from "./types";
 
-export interface ScanProgress {
+export type ScanProgress = {
   requestsSent: number;
   parametersSent: number;
   findingsCount: number;
   totalParametersAmount: number;
-}
+};
 
-export interface ScanRequestSummary {
+export type ScanRequestSummary = {
   context: RequestContext;
   parametersSent: number;
   parametersTested: number;
   responseStatus: number;
   responseTime: number;
-}
+};
 
-export interface ScanFindingSummary {
+export type ScanFindingSummary = {
   parameter: string;
   anomalyType: AnomalyType;
   anomaly: string;
   context: RequestContext;
   responseStatus: number;
   responseTime: number;
-}
+};
 
-interface ScanSummaryBase extends ScanProgress {
+type ScanSummaryBase = ScanProgress & {
   findings: ScanFindingSummary[];
-}
+};
 
 export type ScanOutcomeState =
   | typeof EngineState.Completed
@@ -85,7 +85,7 @@ export type ScanEvent =
       progress: ScanProgress;
     };
 
-export interface ScanEventProjection {
+export type ScanEventProjection = {
   readonly progress: ScanProgress;
   readonly findingSummaries: readonly ScanFindingSummary[];
   handleDiscoveryEvent(event: DiscoveryEvent): ScanEvent | undefined;
@@ -94,7 +94,7 @@ export interface ScanEventProjection {
     findings?: readonly ScanFindingSummary[],
   ): ScanSummary;
   summarizeFinding(finding: Finding): ScanFindingSummary;
-}
+};
 
 export function createScanEventProjection(
   totalParametersAmount: number,

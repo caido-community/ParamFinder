@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   MAX_HEURISTIC_BODY_LENGTH,
   sampleBody,
+  sanitizeWords,
   stringSimilarity,
 } from "./utils";
 
@@ -26,5 +27,20 @@ describe("body analysis helpers", () => {
     const changed = `${body.slice(0, changedStart)}${"b".repeat(MAX_HEURISTIC_BODY_LENGTH * 2)}${body.slice(changedStart + MAX_HEURISTIC_BODY_LENGTH * 2)}`;
 
     expect(stringSimilarity(body, changed)).toBeLessThan(0.95);
+  });
+});
+
+describe("sanitizeWords", () => {
+  it("drops control characters that wordlists carry by accident", () => {
+    expect(
+      sanitizeWords(["token", "\u0003token", "\u0003debug", "a\u0000b\u007f"]),
+    ).toEqual(["token", "debug", "ab"]);
+  });
+
+  it("drops lone surrogates but keeps characters outside the BMP", () => {
+    expect(sanitizeWords(["a\ud800b", "\udc00", "key\u{1f511}"])).toEqual([
+      "ab",
+      "key\u{1f511}",
+    ]);
   });
 });

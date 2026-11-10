@@ -6,23 +6,23 @@ import { appendHeader, buildUrl, getUtf8ByteLength, hasHeader } from "./utils";
 type HeaderValue = string | string[];
 export type HeaderInput = Headers | HeaderMap | Record<string, HeaderValue>;
 
-export interface CreateEngineRequestInput {
+export type CreateEngineRequestInput = {
   url: string;
   method?: string;
   headers?: HeaderInput;
   body?: string;
   id?: string;
   context?: RequestContext;
-}
+};
 
-export interface CreateEngineRequestHeadersInput {
+export type CreateEngineRequestHeadersInput = {
   headers?: string[];
   defaults?: HeaderInput;
   body?: string;
   contentType?: string;
-}
+};
 
-export interface CreateEngineRequestFromRawInput {
+export type CreateEngineRequestFromRawInput = {
   raw: string;
   host: string;
   port: number;
@@ -34,7 +34,7 @@ export interface CreateEngineRequestFromRawInput {
   method?: string;
   headers?: HeaderMap;
   body?: string;
-}
+};
 
 export function createEngineRequestFromRaw(
   input: CreateEngineRequestFromRawInput,
@@ -191,7 +191,7 @@ function addBodyMetadataHeaders(
   headers: HeaderMap,
   body: string,
   contentType?: string,
-): void {
+) {
   if (!body) return;
 
   if (contentType && !hasHeader(headers, "Content-Type")) {

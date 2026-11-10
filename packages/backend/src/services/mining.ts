@@ -17,6 +17,7 @@ import {
 } from "shared";
 
 import { CaidoRequestProvider, toEngineConfig, toRunOptions } from "../engine";
+import { SESSION_DELETE_BATCH_SIZE } from "../repositories/sessions";
 import {
   type PauseOwnership,
   type RunningSession,
@@ -258,12 +259,7 @@ export class MiningService {
       return terminalPersistenceError();
     }
 
-    if (
-      running.state !== EngineState.Pending &&
-      running.state !== EngineState.Learning &&
-      running.state !== EngineState.Running &&
-      running.state !== EngineState.Paused
-    ) {
+    if (this.events.isTerminal(running.state)) {
       return error(`Cannot pause a ${running.state} session.`, "CONFLICT");
     }
 
@@ -317,17 +313,24 @@ export class MiningService {
   }
 
   async deleteSessions(refs: SessionRef[]): Promise<void> {
-    const revisions = await this.sessions.deleteSessions(refs);
+    for (
+      let start = 0;
+      start < refs.length;
+      start += SESSION_DELETE_BATCH_SIZE
+    ) {
+      const batch = refs.slice(start, start + SESSION_DELETE_BATCH_SIZE);
+      const revisions = await this.sessions.deleteSessions(batch);
 
-    this.runningSessions.tombstone(refs);
+      this.runningSessions.tombstone(batch);
 
-    for (const [projectId, revision] of revisions) {
-      this.events.publish(projectId, revision, [
-        {
-          type: "delete",
-          refs: refs.filter((ref) => ref.projectId === projectId),
-        },
-      ]);
+      for (const [projectId, revision] of revisions) {
+        this.events.publish(projectId, revision, [
+          {
+            type: "delete",
+            refs: batch.filter((ref) => ref.projectId === projectId),
+          },
+        ]);
+      }
     }
   }
 
@@ -588,10 +591,7 @@ export class MiningService {
     return projectChangedError();
   }
 
-  private releasePause(
-    running: RunningSession,
-    ownership: PauseOwnership,
-  ): void {
+  private releasePause(running: RunningSession, ownership: PauseOwnership) {
     if (running.pauseOwnership !== ownership) {
       return;
     }
@@ -600,7 +600,7 @@ export class MiningService {
     this.rollbackPause(running);
   }
 
-  private rollbackPause(running: RunningSession): void {
+  private rollbackPause(running: RunningSession) {
     if (
       !running.controller.signal.aborted &&
       !this.events.isTerminal(running.state)

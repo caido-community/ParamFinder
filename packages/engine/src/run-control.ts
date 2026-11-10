@@ -52,7 +52,7 @@ export class RunControl {
   }
 }
 
-export function throwIfAborted(signal?: AbortSignal): void {
+export function throwIfAborted(signal?: AbortSignal) {
   if (signal?.aborted) {
     throw new EngineError("RUN_ABORTED", "Run aborted");
   }

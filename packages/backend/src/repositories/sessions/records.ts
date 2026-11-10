@@ -20,6 +20,8 @@ import {
 } from "./mapping";
 import { bumpProjectRevision } from "./schema";
 
+export const SESSION_DELETE_BATCH_SIZE = 500;
+
 export class SessionsRepository {
   constructor(private readonly database: Database) {}
 

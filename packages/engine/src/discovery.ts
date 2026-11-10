@@ -12,7 +12,7 @@ import { randomString } from "./utils";
 const DEFAULT_HEADER_CHUNK_SIZE = 20;
 const PARAMETER_VALUE_LENGTH = 8;
 
-interface NextChunkInput {
+type NextChunkInput = {
   words: string[];
   startIndex: number;
   request: EngineRequest;
@@ -23,12 +23,12 @@ interface NextChunkInput {
   customValueType?: ParameterValueType;
   jsonBodyPath?: string;
   random: () => number;
-}
+};
 
-interface NextChunkResult {
+type NextChunkResult = {
   parameters: Parameter[];
   nextIndex: number;
-}
+};
 
 export function getNextChunk(input: NextChunkInput): NextChunkResult {
   switch (input.attackType) {
@@ -194,6 +194,7 @@ function collectChunk(
   let probe = 1;
 
   while (fitting === probe && materializeUpTo(probe + 1)) {
+    materializeUpTo(probe * 2);
     const next = Math.min(probe * 2, candidates.length);
     if (fitsFirst(next)) {
       fitting = next;

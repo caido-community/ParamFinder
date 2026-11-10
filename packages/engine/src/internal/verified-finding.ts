@@ -16,20 +16,20 @@ import {
   type VerifiedAnomalyResult,
 } from "./shared";
 
-export interface VerifyParameterChunkInput {
+export type VerifyParameterChunkInput = {
   request: EngineRequest;
   parameters: Parameter[];
   engineConfig: EngineConfig;
   profile: BaselineProfile;
   runOptions?: RunOptions;
   ignoredAnomalyTypes?: readonly AnomalyType[];
-}
+};
 
-export interface ParameterChunkVerifier {
+export type ParameterChunkVerifier = {
   verifyParameterChunk(
     input: VerifyParameterChunkInput,
   ): Promise<VerifiedAnomalyResult | undefined>;
-}
+};
 
 export function createParameterChunkVerifier(
   runtime: Pick<EngineRuntime, "events" | "requests">,
@@ -102,26 +102,29 @@ export function createParameterChunkVerifier(
       ignoredAnomalyTypes,
       skipCloudflareBlocks,
     );
+    const comparison = {
+      ignoredAnomalyTypes,
+      skipCloudflareBlocks,
+      expectedBodyDiffCount: input.profile.bodyDiffReferenceCount,
+      expectedReflectionsCount: input.profile.stableFactors.reflectionsCount,
+    };
     const candidateVsBefore = compareResponseToReference(input.profile, {
       referenceResponse: controlBeforeRequestResponse.response,
       response: requestResponse.response,
       parameters: input.parameters,
-      ignoredAnomalyTypes,
-      skipCloudflareBlocks,
+      ...comparison,
     });
     const candidateVsAfter = compareResponseToReference(input.profile, {
       referenceResponse: controlAfterRequestResponse.response,
       response: requestResponse.response,
       parameters: input.parameters,
-      ignoredAnomalyTypes,
-      skipCloudflareBlocks,
+      ...comparison,
     });
     const controlWindowAnomaly = compareResponseToReference(input.profile, {
       referenceResponse: controlBeforeRequestResponse.response,
       response: controlAfterRequestResponse.response,
       parameters: [],
-      ignoredAnomalyTypes,
-      skipCloudflareBlocks,
+      ...comparison,
     });
 
     if (
@@ -193,7 +196,7 @@ function emitDiscardedVerificationLog(
     controlAfterAnomaly?: ReturnType<typeof detectAnomaly>;
     controlWindowAnomaly?: ReturnType<typeof compareResponseToReference>;
   },
-): void {
+) {
   const discardReasons = [
     anomalies.controlBeforeAnomaly
       ? `before=${describeAnomaly(anomalies.controlBeforeAnomaly)}`

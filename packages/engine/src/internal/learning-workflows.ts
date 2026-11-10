@@ -24,7 +24,6 @@ import type { EngineRuntime } from "./runtime";
 import {
   type AutopilotResult,
   createAdditionalCheckParameterValue,
-  createWafParameters,
   getWafPatterns,
 } from "./shared";
 
@@ -266,17 +265,11 @@ export function createLearningWorkflows(
       return undefined;
     }
 
-    const seenParameterSets = new Set<string>();
     const anomalousResponses: EngineResponse[] = [];
 
     for (const pattern of getWafPatterns()) {
       await runtime.run.waitForCheckpoint(runOptions);
-      const parameters = createWafParameters(pattern, engineConfig);
-      const parameterSetKey = createParameterSetKey(parameters);
-      if (seenParameterSets.has(parameterSetKey)) {
-        continue;
-      }
-      seenParameterSets.add(parameterSetKey);
+      const parameters = [{ name: "test", value: pattern }];
 
       const requestResponse = await runtime.requests.sendMutatedRequest({
         baseRequest: request,
@@ -299,20 +292,24 @@ export function createLearningWorkflows(
         requestResponse.response,
         parameters,
       );
-      if (
+      // A block page that still looks like the baseline would match, and so
+      // suppress, every later response.
+      const looksBlocked =
         anomaly !== undefined &&
         anomaly.type !== AnomalyType.ReflectionCount &&
-        anomalousResponses.some((response) =>
-          matchesWafResponse(response, requestResponse.response),
-        )
-      ) {
-        runtime.requests.setKnownWafResponse(requestResponse.response);
-        return requestResponse.response;
-      }
-      if (
-        anomaly !== undefined &&
-        anomaly.type !== AnomalyType.ReflectionCount
-      ) {
+        !matchesWafResponse(
+          profile.initialRequestResponse.response,
+          requestResponse.response,
+        );
+      if (looksBlocked) {
+        if (
+          anomalousResponses.some((response) =>
+            matchesWafResponse(response, requestResponse.response),
+          )
+        ) {
+          runtime.requests.setKnownWafResponse(requestResponse.response);
+          return requestResponse.response;
+        }
         anomalousResponses.push(requestResponse.response);
       }
 
@@ -330,10 +327,4 @@ export function createLearningWorkflows(
     performAdditionalChecks,
     performLearning,
   };
-}
-
-function createParameterSetKey(
-  parameters: readonly { name: string; value: string }[],
-): string {
-  return JSON.stringify(parameters);
 }

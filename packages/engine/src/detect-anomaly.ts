@@ -21,11 +21,11 @@ import {
   splitLines,
 } from "./utils";
 
-interface ReferenceIndex {
+type ReferenceIndex = {
   similarityCounts?: Map<string, number>;
   similarityLength?: number;
   lines?: string[];
-}
+};
 
 const referenceCache = new WeakMap<EngineResponse, ReferenceIndex>();
 
@@ -78,7 +78,7 @@ function referenceLineDifferences(
   return countLineDifferencesFromLeft(index.lines, sampleBody(responseBody));
 }
 
-interface CompareResponseToReferenceOptions {
+type CompareResponseToReferenceOptions = {
   referenceResponse: EngineResponse;
   response: EngineResponse;
   parameters: Parameter[];
@@ -87,7 +87,7 @@ interface CompareResponseToReferenceOptions {
   expectedRedirect?: string;
   ignoredAnomalyTypes?: readonly AnomalyType[];
   skipCloudflareBlocks?: boolean;
-}
+};
 
 const SIMILARITY_THRESHOLD = 0.95;
 

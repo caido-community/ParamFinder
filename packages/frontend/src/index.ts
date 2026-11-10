@@ -3,7 +3,11 @@ import { createPinia } from "pinia";
 import PrimeVue from "primevue/config";
 import ConfirmationService from "primevue/confirmationservice";
 import Tooltip from "primevue/tooltip";
-import type { ApiResult, SessionChangeEnvelope } from "shared";
+import {
+  type ApiResult,
+  MiningSessionState,
+  type SessionChangeEnvelope,
+} from "shared";
 import { createApp, watch } from "vue";
 
 import App from "@/app/App.vue";
@@ -73,7 +77,13 @@ export const init = (sdk: FrontendSDK) => {
 
     let added = 0;
     for (const change of envelope.changes) {
-      if (change.type !== "upsert") continue;
+      // Later upserts of a session loaded with the project are not new scans.
+      if (
+        change.type !== "upsert" ||
+        change.session.state !== MiningSessionState.Pending
+      ) {
+        continue;
+      }
 
       const key = `${change.session.ref.projectId}:${change.session.ref.sessionId}`;
       if (notifiedSessions.has(key)) continue;

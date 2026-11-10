@@ -1,4 +1,4 @@
-import { type Settings, settingsSchema } from "shared";
+import { type Settings, type SettingsChanges, settingsSchema } from "shared";
 
 import type { SettingsRepository } from "../repositories";
 import { SerialTaskQueue } from "../util";
@@ -38,7 +38,7 @@ export class SettingsService {
 
       try {
         const stored = await this.repository.read();
-        this.settings = settingsSchema.parse(stored);
+        this.settings = dropIgnoredMaxSizes(settingsSchema.parse(stored));
       } catch {
         await this.repository.quarantine().catch(() => undefined);
 
@@ -54,21 +54,26 @@ export class SettingsService {
     return this.queue.run(async () => copySettings(this.getInitialized()));
   }
 
-  async patchSettings(changes: Partial<Settings>): Promise<Settings> {
+  async patchSettings(changes: SettingsChanges): Promise<Settings> {
     return this.queue.run(async () => {
-      const settings = this.getInitialized();
-      const validated = settingsSchema.safeParse({ ...settings, ...changes });
+      const merged = Object.fromEntries(
+        Object.entries({ ...this.getInitialized(), ...changes }).filter(
+          ([, value]) => value !== null,
+        ),
+      );
+      const validated = settingsSchema.safeParse(merged);
       if (!validated.success) {
         throw new SettingsValidationError(
           validated.error.issues.map((issue) => issue.message).join("; "),
         );
       }
 
-      await this.repository.write(validated.data);
+      const settings = dropIgnoredMaxSizes(validated.data);
+      await this.repository.write(settings);
 
-      this.settings = validated.data;
+      this.settings = settings;
 
-      return copySettings(validated.data);
+      return copySettings(settings);
     });
   }
 
@@ -79,6 +84,18 @@ export class SettingsService {
 
     return this.settings;
   }
+}
+
+// The engine rejects explicit sizes while auto-detect is on.
+function dropIgnoredMaxSizes(settings: Settings): Settings {
+  if (!settings.autoDetectMaxSize) return settings;
+
+  return {
+    ...settings,
+    maxQuerySize: undefined,
+    maxHeaderSize: undefined,
+    maxBodySize: undefined,
+  };
 }
 
 function copySettings(settings: Settings): Settings {

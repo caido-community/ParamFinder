@@ -13,6 +13,15 @@ import {
 
 import type { CliOptions } from "./args";
 
+// fetch rejects the whole request for these names, which would end the scan.
+const UNSENDABLE_HEADERS = new Set([
+  "content-length",
+  "expect",
+  "keep-alive",
+  "transfer-encoding",
+  "upgrade",
+]);
+
 export class NodeRequestProvider implements RequestProvider {
   public async send(
     request: EngineRequest,
@@ -20,6 +29,8 @@ export class NodeRequestProvider implements RequestProvider {
   ): Promise<EngineRequestResponse> {
     const headers = new Headers();
     for (const [name, values] of Object.entries(request.headers)) {
+      if (UNSENDABLE_HEADERS.has(name.toLowerCase())) continue;
+
       for (const value of values) {
         headers.append(name, value);
       }

@@ -877,4 +877,27 @@ describe("sessions store reliability", () => {
     expect(store.activeDescriptor?.error?.message).toBe("persisted failure");
     expect(sdkHolder.current?.window.showToast).not.toHaveBeenCalled();
   });
+
+  it("reruns the requested session after another one became active", async () => {
+    const config = { attackType: "query" } as ParamMinerConfig;
+    const first = {
+      ...descriptor("a", "1"),
+      rerun: { targetRequest: { id: "first" } as Request, config },
+    };
+    const second = {
+      ...descriptor("a", "2"),
+      rerun: { targetRequest: { id: "second" } as Request, config },
+    };
+    const startMining = vi.fn(async () => ok(descriptor("a", "3")));
+    sdkHolder.current = createSDK({
+      listSessions: vi.fn(async () => ok(snapshot("a", 1, [second, first]))),
+      startMining,
+    });
+    const store = useSessionsStore();
+    await store.initialize();
+    store.setActiveSession("2");
+
+    expect((await store.rerunSession("1")).success).toBe(true);
+    expect(startMining).toHaveBeenCalledWith({ id: "first" }, config);
+  });
 });

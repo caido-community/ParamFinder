@@ -150,7 +150,7 @@ export class MiningEvents {
   private async persistFinalState(
     running: RunningSession,
     lifecycle: TerminalSessionLifecycle,
-  ): Promise<void> {
+  ) {
     let finalLifecycle = lifecycle;
 
     try {
@@ -234,7 +234,7 @@ export class MiningEvents {
     running: RunningSession,
     config: ParamMinerConfig,
     event: DiscoveryEvent,
-  ): Promise<void> {
+  ) {
     if (
       !this.runningSessions.isCurrent(running) ||
       terminalStates.has(running.state)
@@ -300,7 +300,7 @@ export class MiningEvents {
   private async persistEntry(
     running: RunningSession,
     entry: SessionEntryInput,
-  ): Promise<void> {
+  ) {
     if (
       !this.runningSessions.isCurrent(running) ||
       terminalStates.has(running.state)
@@ -327,7 +327,7 @@ export class MiningEvents {
   private async persistTerminalWithRetry(
     running: RunningSession,
     lifecycle: TerminalSessionLifecycle,
-  ): Promise<void> {
+  ) {
     let lastError: unknown;
     for (let attempt = 0; attempt < TERMINAL_PERSIST_ATTEMPTS; attempt += 1) {
       try {
@@ -344,7 +344,7 @@ export class MiningEvents {
   private async persistTerminal(
     running: RunningSession,
     lifecycle: TerminalSessionLifecycle,
-  ): Promise<void> {
+  ) {
     if (
       !this.runningSessions.isCurrent(running) ||
       running.terminalPersistence.kind !== "persisting"

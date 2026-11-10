@@ -3,7 +3,7 @@ import { storeToRefs } from "pinia";
 import InputNumber from "primevue/inputnumber";
 import MultiSelect from "primevue/multiselect";
 import ToggleSwitch from "primevue/toggleswitch";
-import { AnomalyType, type Settings } from "shared";
+import { AnomalyType, type Settings, type SettingsChanges } from "shared";
 
 import { useSettingsStore } from "@/features/settings/stores/store";
 import { useActionResult } from "@/shared/composables/useActionResult";
@@ -12,7 +12,7 @@ const settingsStore = useSettingsStore();
 const { showResult } = useActionResult();
 const { data } = storeToRefs(settingsStore);
 
-const updateSettings = async (updates: Partial<Settings>) => {
+const updateSettings = async (updates: SettingsChanges) => {
   showResult(await settingsStore.update(updates), {
     errorPrefix: "Failed to update settings",
   });
@@ -83,7 +83,7 @@ const setBool = (field: BooleanSettingKey, value: boolean) => {
 
 const setMaxSize = (
   field: "maxQuerySize" | "maxHeaderSize" | "maxBodySize",
-  value: number | undefined,
+  value: number | null,
 ) => {
   return updateSettings({ [field]: value });
 };
@@ -93,14 +93,6 @@ const setIgnoreAnomalyTypes = (value: AnomalyType[]) => {
 };
 
 const onAutoDetectMaxSize = (value: boolean) => {
-  if (value) {
-    return updateSettings({
-      autoDetectMaxSize: value,
-      maxQuerySize: undefined,
-      maxHeaderSize: undefined,
-      maxBodySize: undefined,
-    });
-  }
   return updateSettings({ autoDetectMaxSize: value });
 };
 
@@ -141,12 +133,11 @@ const numberPt = {
             >Max URL size</label
           >
           <InputNumber
-            :model-value="data.maxQuerySize ?? 0"
-            :min="0"
+            :model-value="data.maxQuerySize ?? null"
+            :min="1"
+            placeholder="Default"
             :pt="numberPt"
-            @update:model-value="
-              (value) => setMaxSize('maxQuerySize', value ?? undefined)
-            "
+            @update:model-value="(value) => setMaxSize('maxQuerySize', value)"
           />
         </div>
         <div class="space-y-1">
@@ -154,12 +145,11 @@ const numberPt = {
             >Max header size</label
           >
           <InputNumber
-            :model-value="data.maxHeaderSize ?? 0"
-            :min="0"
+            :model-value="data.maxHeaderSize ?? null"
+            :min="1"
+            placeholder="Default"
             :pt="numberPt"
-            @update:model-value="
-              (value) => setMaxSize('maxHeaderSize', value ?? undefined)
-            "
+            @update:model-value="(value) => setMaxSize('maxHeaderSize', value)"
           />
         </div>
         <div class="space-y-1">
@@ -167,12 +157,11 @@ const numberPt = {
             >Max body size</label
           >
           <InputNumber
-            :model-value="data.maxBodySize ?? 0"
-            :min="0"
+            :model-value="data.maxBodySize ?? null"
+            :min="1"
+            placeholder="Default"
             :pt="numberPt"
-            @update:model-value="
-              (value) => setMaxSize('maxBodySize', value ?? undefined)
-            "
+            @update:model-value="(value) => setMaxSize('maxBodySize', value)"
           />
         </div>
       </div>

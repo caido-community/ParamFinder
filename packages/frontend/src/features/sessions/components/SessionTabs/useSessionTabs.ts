@@ -65,7 +65,7 @@ export function useSessionTabs() {
         label: "Rerun",
         icon: "fas fa-fw fa-redo",
         disabled: !canRerun,
-        command: () => execute(store.rerunActive()),
+        command: () => execute(store.rerunSession(id)),
       },
     ];
   });

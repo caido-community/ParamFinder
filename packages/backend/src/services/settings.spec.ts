@@ -1,3 +1,4 @@
+import { paramMinerConfigSchema, settingsToParamMinerConfig } from "shared";
 import { describe, expect, it, vi } from "vitest";
 
 import {
@@ -92,6 +93,47 @@ describe("SettingsService", () => {
     expect(vi.mocked(fs.writeFile).mock.calls[0]?.[1]).toContain(
       '"requestTimeoutSeconds": 900',
     );
+  });
+
+  it("clears optional settings patched to null", async () => {
+    const service = await createService();
+    await service.patchSettings({
+      autoDetectMaxSize: false,
+      scanTimeoutSeconds: 60,
+      maxQuerySize: 2000,
+    });
+
+    const cleared = await service.patchSettings({
+      scanTimeoutSeconds: null,
+      maxQuerySize: null,
+    });
+
+    expect(cleared.scanTimeoutSeconds).toBeUndefined();
+    expect(cleared.maxQuerySize).toBeUndefined();
+    await expect(service.getSettings()).resolves.toEqual(cleared);
+  });
+
+  it("drops explicit max sizes while auto-detect is enabled", async () => {
+    const stored = JSON.stringify({
+      ...createDefaultSettings(),
+      autoDetectMaxSize: true,
+      maxHeaderSize: 4000,
+    });
+    const service = await createService(createFileSystem(stored));
+    await expect(service.getSettings()).resolves.toEqual(
+      createDefaultSettings(),
+    );
+
+    await service.patchSettings({
+      autoDetectMaxSize: false,
+      maxBodySize: 9000,
+    });
+    const settings = await service.patchSettings({ autoDetectMaxSize: true });
+
+    expect(settings.maxBodySize).toBeUndefined();
+    expect(() =>
+      paramMinerConfigSchema.parse(settingsToParamMinerConfig(settings)),
+    ).not.toThrow();
   });
 
   it("returns detached settings and reports invalid patches explicitly", async () => {

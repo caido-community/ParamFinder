@@ -137,7 +137,7 @@ async function createService(
   return new SessionsService(repository);
 }
 
-function insertPersistedSession(ref: SessionRef, createdAt = Date.now()): void {
+function insertPersistedSession(ref: SessionRef, createdAt = Date.now()) {
   const database = new DatabaseSync(path.join(directory, "meta.db"));
   database
     .prepare(

@@ -742,8 +742,8 @@ export const useSessionsStore = defineStore("sessions", () => {
   const runAction = async (
     action: SessionAction,
     request: (ref: SessionRef) => Promise<ApiResult<void>>,
+    descriptor = activeDescriptor.value,
   ): Promise<ApiResult<void>> => {
-    const descriptor = activeDescriptor.value;
     if (descriptor === undefined) return ok(undefined);
 
     const id = descriptor.ref.sessionId;
@@ -775,8 +775,10 @@ export const useSessionsStore = defineStore("sessions", () => {
   const cancelActive = () =>
     runAction("cancel", (ref) => sdk.backend.cancelSession(ref));
 
-  const rerunActive = async (): Promise<ApiResult<void>> => {
-    const descriptor = activeDescriptor.value;
+  const rerunSession = async (
+    id = activeSessionId.value,
+  ): Promise<ApiResult<void>> => {
+    const descriptor = id === undefined ? undefined : sessions.value[id];
     const token = generation.value;
     if (descriptor === undefined || descriptor.rerun === undefined) {
       return error("This session cannot be rerun.", "VALIDATION");
@@ -784,19 +786,28 @@ export const useSessionsStore = defineStore("sessions", () => {
     const rerun = descriptor.rerun;
     const projectId = descriptor.ref.projectId;
 
-    return runAction("rerun", async () => {
-      const result = await sdk.backend.startMining(
-        rerun.targetRequest,
-        rerun.config,
-      );
-      if (!result.success) return result;
+    return runAction(
+      "rerun",
+      async () => {
+        const result = await sdk.backend.startMining(
+          rerun.targetRequest,
+          rerun.config,
+        );
+        if (!result.success) return result;
 
-      if (token === generation.value && currentProjectId.value === projectId) {
-        selectStartedSession(result.value);
-      }
-      return ok(undefined);
-    });
+        if (
+          token === generation.value &&
+          currentProjectId.value === projectId
+        ) {
+          selectStartedSession(result.value);
+        }
+        return ok(undefined);
+      },
+      descriptor,
+    );
   };
+
+  const rerunActive = () => rerunSession();
 
   const startSession = async (
     request: Request,
@@ -875,6 +886,7 @@ export const useSessionsStore = defineStore("sessions", () => {
     resumeActive,
     cancelActive,
     rerunActive,
+    rerunSession,
     deleteSession,
     deleteActive,
     deleteOtherSessions,

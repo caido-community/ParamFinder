@@ -34,7 +34,16 @@ export const settingsSchema = z.object({
 });
 export type Settings = z.infer<typeof settingsSchema>;
 
-export const settingsChangesSchema = settingsSchema.partial().strict();
+// The plugin RPC is JSON and drops undefined, so null is what clears a setting.
+export const settingsChangesSchema = settingsSchema
+  .partial()
+  .extend({
+    scanTimeoutSeconds: settingsSchema.shape.scanTimeoutSeconds.nullable(),
+    maxQuerySize: settingsSchema.shape.maxQuerySize.nullable(),
+    maxHeaderSize: settingsSchema.shape.maxHeaderSize.nullable(),
+    maxBodySize: settingsSchema.shape.maxBodySize.nullable(),
+  })
+  .strict();
 export type SettingsChanges = z.infer<typeof settingsChangesSchema>;
 
 export const paramMinerConfigSchema = engineConfigSchema.safeExtend({

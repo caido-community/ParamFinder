@@ -13,7 +13,7 @@ import {
   getConfiguredMaxSize,
   requireProfile,
 } from "./internal/shared";
-import { extractWordsFromResponseBody } from "./learn";
+import { extractWordsFromResponseBody, getSizeProbeConfig } from "./learn";
 import type { EngineDependencies } from "./provider";
 import { EnginePhase, EngineState } from "./types";
 import type {
@@ -86,7 +86,13 @@ export function createDiscoveryEngine(dependencies: EngineDependencies) {
           parsed.runOptions,
         );
       } else {
-        profile.maxSize = getConfiguredMaxSize(parsed.engineConfig);
+        profile.maxSize =
+          getConfiguredMaxSize(parsed.engineConfig) ??
+          getSizeProbeConfig(
+            parsed.engineConfig.attackType,
+            profile.bodyKind ?? "text",
+            parsed.engineConfig.customValueType,
+          ).defaultSize;
       }
 
       if (parsed.engineConfig.wafDetection) {
@@ -99,7 +105,12 @@ export function createDiscoveryEngine(dependencies: EngineDependencies) {
       }
 
       let words = [...initialWords];
-      if (parsed.engineConfig.additionalChecks) {
+      // The probes are parameter names with special characters, which are
+      // never valid header names.
+      if (
+        parsed.engineConfig.additionalChecks &&
+        parsed.engineConfig.attackType !== "headers"
+      ) {
         const additionalChecks =
           await learningWorkflows.performAdditionalChecks(
             parsed.request,
